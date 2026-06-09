@@ -1,0 +1,2 @@
+com.ticket_system.common.config.KafkaConsumerConfig
+com.ticket_system.common.config.KafkaProducerConfig

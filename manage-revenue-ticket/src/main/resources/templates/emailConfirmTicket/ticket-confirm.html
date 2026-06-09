@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+
+<h2>Xác nhận đặt vé</h2>
+<p>Bạn đã yêu cầu đặt vé. Hãy xác nhận:</p>
+
+<a th:href="${acceptUrl}"
+   style="background:green;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">
+  Accept
+</a>
+
+&nbsp;
+
+<a th:href="${cancelUrl}"
+   style="background:red;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">
+  Cancel
+</a>
+
+</body>
+</html>

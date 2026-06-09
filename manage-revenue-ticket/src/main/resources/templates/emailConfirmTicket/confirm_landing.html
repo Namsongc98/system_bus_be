@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <title>Đang xử lý...</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; padding-top: 100px; color: #333; }
+    .card { max-width: 400px; margin: auto; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 1px solid #eee; }
+    .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div id="content">
+    <div class="loader"></div>
+    <p>Đang xử lý yêu cầu xác nhận vé <strong>[[${ticketId}]]</strong>...</p>
+  </div>
+</div>
+
+<script th:inline="javascript">
+  // Lấy dữ liệu từ Thymeleaf truyền vào JS
+  const ticketId = [[${ticketId}]];
+  const status = [[${status}]];
+
+  // Gọi API xử lý nghiệp vụ thực sự (đây là API Rest ban đầu của bạn)
+  fetch(`/api/ticket/confirm?ticketId=${ticketId}&status=${status}`, {
+      method: 'POST'
+  })
+  .then(response => {
+      if (response.ok) {
+          document.getElementById('content').innerHTML = `
+              <h2 style="color: #27ae60;">Thành công!</h2>
+              <p>Trạng thái vé của bạn đã được cập nhật thành: <strong>${status}</strong>.</p>
+              <p>Bạn có thể đóng tab này.</p>
+          `;
+      } else {
+          throw new Error('Lỗi server');
+      }
+  })
+  .catch(error => {
+      document.getElementById('content').innerHTML = `
+          <h2 style="color: #e74c3c;">Thất bại</h2>
+          <p>Không thể xử lý yêu cầu. Vui lòng thử lại sau.</p>
+      `;
+  });
+</script>
+</body>
+</html>

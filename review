@@ -1,0 +1,62 @@
+#!/bin/bash
+
+################################################################################
+# 🔍 Code Review - Short Alias
+# Ultra-short commands like Copilot
+################################################################################
+
+TOOL_DIR="/Users/ADMIN/Desktop/Wordspace/Programing/Java/ticket-system"
+
+case "$1" in
+    scan|s)
+        cd "$TOOL_DIR" && ./code-review.sh /scan
+        ;;
+    analyze|a)
+        cd "$TOOL_DIR" && ./code-review.sh /analyze "$2"
+        ;;
+    security|sec)
+        cd "$TOOL_DIR" && ./code-review.sh /security
+        ;;
+    performance|perf|p)
+        cd "$TOOL_DIR" && ./code-review.sh /performance
+        ;;
+    fix|f)
+        cd "$TOOL_DIR" && ./code-review.sh /fix "$2"
+        ;;
+    report|r)
+        cd "$TOOL_DIR" && ./code-review.sh /report
+        ;;
+    test|t)
+        cd "$TOOL_DIR" && ./code-review.sh /test
+        ;;
+    metrics|m)
+        cd "$TOOL_DIR" && ./code-review.sh /metrics
+        ;;
+    help|h|"")
+        echo "🔍 Code Review - Quick Commands"
+        echo ""
+        echo "Usage: review <command> [options]"
+        echo ""
+        echo "Commands:"
+        echo "  scan, s              - Quick scan"
+        echo "  analyze, a <file>    - Analyze file"
+        echo "  security, sec        - Security check"
+        echo "  performance, perf, p - Performance check"
+        echo "  fix, f [file]        - Fix suggestions"
+        echo "  report, r            - Full report"
+        echo "  test, t              - Run tests"
+        echo "  metrics, m           - Code metrics"
+        echo ""
+        echo "Examples:"
+        echo "  review scan"
+        echo "  review s"
+        echo "  review analyze BusService.java"
+        echo "  review a BusService.java"
+        echo "  review fix"
+        echo ""
+        ;;
+    *)
+        cd "$TOOL_DIR" && ./code-review.sh "$@"
+        ;;
+esac
+

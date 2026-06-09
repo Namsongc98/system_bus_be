@@ -1,0 +1,17 @@
+services:
+  booking-ticket:
+    build: .
+    container_name: booking-container
+    ports:
+      - "8081:8081"
+    environment:
+      # QUAN TRỌNG: Host phải là 'mysql' (tên service trong file DB)
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/quan-ly-ban-hang?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: 123456789
+    networks:
+      - ticket-system-network
+
+networks:
+  ticket-system-network:
+    external: true

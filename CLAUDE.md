@@ -1,7 +1,7 @@
-# Backend Codex Instructions
+# Backend Claude Instructions
 
-Use this file for backend tasks in `ticket-system/`. Shared Codex assets live in
-the repository root `.codex/`; do not recreate a nested project `.codex` folder.
+Use this file for backend tasks in `ticket-system/`. Shared Claude assets live in
+the repository root `.claude/`; do not create a nested project `.claude` folder.
 
 ## Project Scope
 
@@ -24,18 +24,18 @@ Spring Boot application.
 
 Before editing backend code, read the relevant files in this order:
 
-1. `../AGENTS.md`
-2. `../.codex/references/backend/project-context.md`
-3. `../.codex/references/backend/rules/backend.md`
-4. `../.codex/references/backend/rules/architecture.md`
+1. `../CLAUDE.md`
+2. `../.claude/references/backend/project-context.md`
+3. `../.claude/references/backend/rules/backend.md`
+4. `../.claude/references/backend/rules/architecture.md`
 5. The specific backend rule files for the task area, such as API, database,
    Kafka, Redis, Docker, testing, security, observability, or clean code.
 6. The closest existing source files in the target module.
 
 For review, refactor, bug fixing, or quality work, also read:
 
-- `../.codex/references/backend/rules/clean-code.md`
-- `../.codex/skills/backend-code-review/SKILL.md`
+- `../.claude/references/backend/rules/clean-code.md`
+- `../.claude/skills/backend-code-review/SKILL.md`
 
 ## Non-Negotiable Rules
 
@@ -49,6 +49,8 @@ For review, refactor, bug fixing, or quality work, also read:
   unless there is a clear defect.
 - Use Flyway or Liquibase migrations for production schema changes; do not rely
   on Hibernate `ddl-auto=update` as the production migration strategy.
+  `manage-revenue-ticket` uses Flyway (`db/migration/V<n>__<description>.sql`,
+  never edit an applied file); see `../.claude/references/backend/rules/database.md`.
 - Treat Kafka payloads, keys, topic names, and enum values as cross-service
   contracts.
 

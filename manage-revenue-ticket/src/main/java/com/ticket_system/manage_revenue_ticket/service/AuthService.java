@@ -5,7 +5,6 @@ import com.ticket_system.manage_revenue_ticket.Dto.request.UserRequestDto;
 import com.ticket_system.manage_revenue_ticket.entity.User;
 import com.ticket_system.manage_revenue_ticket.repository.UserRepository;
 import jakarta.validation.Valid;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -13,13 +12,14 @@ import java.time.LocalDateTime;
 
 @Service
 public class AuthService {
-    private UserService userService;
 
-    @Autowired
-    UserRepository userRepository;
+    private final UserRepository userRepository;
 
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
+    public AuthService(UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
 
     public User register(@Valid UserRequestDto user) {
 
@@ -30,13 +30,13 @@ public class AuthService {
         }
 
         String password = passwordEncoder.encode(user.getPassword());
-        UserRole role = (user.getRole() == null) ? UserRole.CUSTOMER : user.getRole();
 
         try{
             User newUser = User.builder()
                     .email(email)
                     .password(password)
-                    .role(role)
+                    // Public register is CUSTOMER-only: any role in the request body is ignored.
+                    .role(UserRole.CUSTOMER)
                     .createdAt(LocalDateTime.now())
                     .build();
             return userRepository.save(newUser);
@@ -54,7 +54,6 @@ public class AuthService {
         if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
             throw new RuntimeException("Mật khẩu cũ không đúng");
         }
-        System.out.println(userRequest.getPassword());
         String newPassword = passwordEncoder.encode(userRequest.getPassword());
         // Mã hoá mật khẩu mới
         user.setPassword(newPassword);

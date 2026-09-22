@@ -1,0 +1,48 @@
+# App layer: 2 Spring Boot service hien co.
+# Khong doi container_name: phai khop target trong ../kong/kong.yml
+# (booking-container:8081, manage-revenue-ticket:8082).
+# Ca 2 service phai join CA HAI network: ticket-system-network (MySQL/Kafka/Kong)
+# va redis-cluster-net (Redis cluster) - 2 network nay tach rieng trong setup hien tai.
+services:
+  booking-service:
+    build:
+      context: ../../
+      dockerfile: booking_ticket/Dockerfile
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-changeme}/ticket-system-booking_ticket:latest
+    container_name: booking-container
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-ticket-system:3306/quan-ly-ban-hang
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: broker1:29092,broker2:29092,broker3:29092
+      SPRING_DATA_REDIS_CLUSTER_NODES: redis-1:7001,redis-2:7002,redis-3:7003,redis-4:7004,redis-5:7005,redis-6:7006
+    networks:
+      - ticket-system-network
+      - redis-cluster-net
+
+  manage-revenue-ticket:
+    build:
+      context: ../../
+      dockerfile: manage-revenue-ticket/Dockerfile
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-changeme}/ticket-system-manage-revenue-ticket:latest
+    container_name: manage-revenue-ticket
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-ticket-system:3306/quan-ly-ban-hang
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: broker1:29092,broker2:29092,broker3:29092
+      SPRING_DATA_REDIS_CLUSTER_NODES: redis-1:7001,redis-2:7002,redis-3:7003,redis-4:7004,redis-5:7005,redis-6:7006
+    networks:
+      - ticket-system-network
+      - redis-cluster-net
+
+networks:
+  ticket-system-network:
+    external: true
+  redis-cluster-net:
+    external: true
+    name: redis-cluster-net

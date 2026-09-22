@@ -46,10 +46,14 @@ public class SecurityConfig {
                 }))
                 .csrf(csrf -> csrf.disable()) // tắt CSRF cho REST API
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll() // login, register không cần token
-                        .requestMatchers("/**").permitAll()
-                        .requestMatchers("/api/ticket/summary/**").permitAll()
-                        .anyRequest().authenticated()                // các API khác cần JWT
+                        .requestMatchers(
+                                "/api/auth/**",
+                                "/avatars/**",
+                                "/api/ticket/email",
+                                "/api/ticket/confirm",
+                                "/ticket/confirm-page"
+                        ).permitAll()
+                        .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(authEntryPoint)   // lỗi 401

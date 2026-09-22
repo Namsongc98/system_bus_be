@@ -2,12 +2,15 @@ package com.ticket_system.manage_revenue_ticket.controller;
 
 import com.ticket_system.common.Dto.request.TicketRequestDto;
 import com.ticket_system.common.Dto.response.BaseResponseDto;
+import com.ticket_system.common.Enum.UserRole;
 import com.ticket_system.common.annotation.PublicApi;
+import com.ticket_system.common.annotation.RoleRequired;
 
 import com.ticket_system.manage_revenue_ticket.entity.Ticket;
 import com.ticket_system.manage_revenue_ticket.service.FileService;
 import com.ticket_system.manage_revenue_ticket.service.TicketService;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -28,19 +31,25 @@ import java.util.Map;
 @RequestMapping("/api/ticket")
 public class TicketController {
 
-    @Autowired
-    private TicketService ticketService;
+    private static final Logger log = LoggerFactory.getLogger(TicketController.class);
 
-    @Autowired
-    private FileService excelService;
+    private final TicketService ticketService;
+    private final FileService excelService;
+
+    public TicketController(TicketService ticketService, FileService excelService) {
+        this.ticketService = ticketService;
+        this.excelService = excelService;
+    }
 
     @PostMapping
+    @RoleRequired(UserRole.ADMIN)
     public ResponseEntity<BaseResponseDto<Ticket>> addTicket(@RequestBody TicketRequestDto responseDto){
         Ticket ticket = ticketService.createTicket(responseDto);
         return ResponseEntity.ok(BaseResponseDto.success(201,"Add Successfully",ticket));
     };
     // export excel tổng doang thu của 1 xe theo time
     @GetMapping("/summary/excel")
+    @RoleRequired(UserRole.ADMIN)
     public ResponseEntity<byte[]> exportTicketSummaryToExcel(
             @RequestParam(required = false) Long busId,
             @RequestParam @DateTimeFormat(pattern = "yyyy-MM-dd:HH:mm:ss") LocalDateTime fromDate,
@@ -60,13 +69,14 @@ public class TicketController {
             return new ResponseEntity<>(outputStream.toByteArray(), headers, HttpStatus.OK);
 
         } catch (IOException e) {
-            e.printStackTrace();
+            log.error("Failed to export ticket summary to Excel", e);
             return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 
     // sửa ticket
     @PutMapping("/{tripId}")
+    @RoleRequired(UserRole.ADMIN)
     public ResponseEntity<BaseResponseDto<Ticket>> updateTicket(@PathVariable String tripId, @RequestBody TicketRequestDto responseDto){
         ticketService.updateTicket(Long.parseLong(tripId), responseDto);
         return ResponseEntity.ok(BaseResponseDto.success(201,"update Successfully",null));
@@ -74,6 +84,7 @@ public class TicketController {
 
     // ticket tổng doang thu của 1 xe theo time
     @GetMapping("/summary")
+    @RoleRequired(UserRole.ADMIN)
     public ResponseEntity<BaseResponseDto<?>> getTicketSummaryByBusAndTime(
             @RequestParam(required = false) Long busId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fromDate,
@@ -97,7 +108,7 @@ public class TicketController {
   public ResponseEntity<?> confirmTicket(@RequestParam String ticketId, @RequestParam String status) {
     try {
       // 1. Logic xử lý database tại đây
-      System.out.println("Processing ticket: " + ticketId + " with status: " + status);
+      log.info("Processing ticket {} with status {}", ticketId, status);
 
       // 2. Trả về thông báo thành công
       Map<String, String> response = new HashMap<>();
@@ -127,7 +138,7 @@ public class TicketController {
       // 2. Kiểm tra xem ticket đã được xử lý chưa (tránh nhấn 2 lần)
       // 3. Cập nhật trạng thái (Accept hoặc Cancel) vào database
 
-      System.out.println("Đang cập nhật Ticket: " + tripId + " thành trạng thái: " + status);
+      log.info("Updating ticket for trip {} to status {}", tripId, status);
 
       // Giả lập xử lý thành công
       boolean isSuccess = true;

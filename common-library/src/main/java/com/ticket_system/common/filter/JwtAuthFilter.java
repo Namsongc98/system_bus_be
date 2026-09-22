@@ -7,7 +7,6 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -17,20 +16,18 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.nio.file.AccessDeniedException;
-import java.util.Collections;
 import java.util.List;
 
 @Component
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
-    public JwtAuthFilter(JwtUtil jwtUtil) {
-        this.jwtUtil = jwtUtil;
-    };
+    private final ObjectMapper mapper;
 
-    @Autowired
-    private ObjectMapper mapper;
+    public JwtAuthFilter(JwtUtil jwtUtil, ObjectMapper mapper) {
+        this.jwtUtil = jwtUtil;
+        this.mapper = mapper;
+    }
 
     @Override
         protected void doFilterInternal(HttpServletRequest request,
@@ -48,22 +45,20 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 jwtToken = authHeader.substring(7);
                 if (jwtUtil.validateToken(jwtToken)) {
                     userId = jwtUtil.extractUserId(jwtToken);
-                    System.out.println(userId);
                 }
             }
             String path = request.getRequestURI();
-            System.out.println("Request path: " + path);
 
             // Ví dụ: bỏ qua auth cho ảnh avatar
-            if (path.startsWith("/avatars/") || path.startsWith("/api/auth/") || path.startsWith("/api/ticket/summary/excel") ||  path.startsWith("/api/redis-test")) {
+            if (path.startsWith("/avatars/") || path.startsWith("/api/auth/") || path.startsWith("/api/redis-test")) {
                 filterChain.doFilter(request, response);
                 return;
             }else {
-                System.out.println("startsWith" + userId != null && SecurityContextHolder.getContext().getAuthentication() == null);
-
                 if (userId != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                    List<GrantedAuthority> authorities =
-                            Collections.singletonList(new SimpleGrantedAuthority("ADMIN"));
+                    String role = jwtUtil.getRoleFromToken(jwtToken);
+                    List<GrantedAuthority> authorities = List.of(
+                            new SimpleGrantedAuthority("ROLE_" + role.toUpperCase())
+                    );
 
                     UsernamePasswordAuthenticationToken authToken =
                             new UsernamePasswordAuthenticationToken(userId, null, authorities);
@@ -74,14 +69,6 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             }
             // Nếu token hợp lệ và chưa có authentication
             filterChain.doFilter(request, response);
-        } catch (AccessDeniedException ex) {
-            if (!response.isCommitted()) {
-                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-                response.setContentType("application/json");
-                response.setCharacterEncoding("UTF-8");
-                response.getWriter().write(mapper.writeValueAsString(
-                        BaseResponseDto.error(HttpServletResponse.SC_FORBIDDEN, ex.getMessage())));
-            }
         } catch (Exception ex) {
             if (!response.isCommitted()) {
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);

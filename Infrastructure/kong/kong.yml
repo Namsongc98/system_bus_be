@@ -1,0 +1,100 @@
+_format_version: "3.0"
+_transform: true
+
+# ─── Upstreams ────────────────────────────────────────────────────────────────
+# Mỗi upstream là một pool target. Thêm target mới vào đây khi scale thêm instance.
+upstreams:
+  - name: booking-upstream
+    algorithm: round-robin
+    healthchecks:
+      active:
+        type: http
+        http_path: /actuator/health
+        healthy:
+          interval: 10
+          successes: 2
+        unhealthy:
+          interval: 5
+          http_failures: 3
+    targets:
+      - target: booking-container:8081
+        weight: 100
+      # Thêm instance thứ 2 khi scale: - target: booking-container-2:8081
+
+  - name: revenue-upstream
+    algorithm: round-robin
+    healthchecks:
+      active:
+        type: http
+        http_path: /actuator/health
+        healthy:
+          interval: 10
+          successes: 2
+        unhealthy:
+          interval: 5
+          http_failures: 3
+    targets:
+      - target: manage-revenue-ticket:8082
+        weight: 100
+      # Thêm instance thứ 2 khi scale: - target: manage-revenue-ticket-2:8082
+
+# ─── Services ─────────────────────────────────────────────────────────────────
+services:
+  - name: booking-service
+    # host trỏ vào upstream name để Kong dùng load balancer
+    host: booking-upstream
+    protocol: http
+    connect_timeout: 5000
+    write_timeout: 60000
+    read_timeout: 60000
+    routes:
+      - name: booking-route
+        paths:
+          - /api/booking
+        strip_path: false
+        preserve_host: false
+        # Path cụ thể hơn (/api/booking) nên Kong tự route ưu tiên trước /api, không cần field priority
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 60
+          hour: 1000
+          policy: local
+          limit_by: ip
+      - name: correlation-id
+        config:
+          header_name: X-Request-ID
+          generator: uuid#counter
+          echo_downstream: true
+
+  - name: revenue-service
+    host: revenue-upstream
+    protocol: http
+    connect_timeout: 5000
+    write_timeout: 60000
+    read_timeout: 60000
+    routes:
+      - name: revenue-route
+        paths:
+          - /api
+        strip_path: false
+        preserve_host: false
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 120
+          hour: 2000
+          policy: local
+          limit_by: ip
+      - name: correlation-id
+        config:
+          header_name: X-Request-ID
+          generator: uuid#counter
+          echo_downstream: true
+
+# ─── Global plugins ────────────────────────────────────────────────────────────
+plugins:
+  - name: request-size-limiting
+    config:
+      allowed_payload_size: 8
+      size_unit: megabytes

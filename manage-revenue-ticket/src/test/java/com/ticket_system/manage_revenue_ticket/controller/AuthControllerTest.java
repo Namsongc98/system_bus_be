@@ -5,8 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ticket_system.common.Enum.UserRole;
 import com.ticket_system.common.exception.GlobalExceptionHandler;
 import com.ticket_system.common.util.JwtUtil;
+import com.ticket_system.manage_revenue_ticket.entity.Profile;
 import com.ticket_system.manage_revenue_ticket.entity.User;
 import com.ticket_system.manage_revenue_ticket.interceptor.AuthInterceptor;
+import com.ticket_system.manage_revenue_ticket.repository.ProfileRepository;
 import com.ticket_system.manage_revenue_ticket.repository.UserRepository;
 import com.ticket_system.manage_revenue_ticket.service.AuthService;
 import org.junit.jupiter.api.Test;
@@ -25,6 +27,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -39,13 +42,14 @@ class AuthControllerTest {
 
     private final JwtUtil jwtUtil = new JwtUtil(SECRET);
     private final UserRepository userRepository = mock(UserRepository.class);
+    private final ProfileRepository profileRepository = mock(ProfileRepository.class);
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
     private final ObjectMapper mapper = new ObjectMapper();
 
     @SuppressWarnings("unchecked")
     private final MockMvc mockMvc = MockMvcBuilders
             .standaloneSetup(new AuthController(
-                    new AuthService(userRepository), jwtUtil, mock(RedisTemplate.class)))
+                    new AuthService(userRepository, profileRepository), jwtUtil, mock(RedisTemplate.class)))
             .addInterceptors(new AuthInterceptor(jwtUtil, mapper))
             .setControllerAdvice(new GlobalExceptionHandler())
             .build();
@@ -124,6 +128,67 @@ class AuthControllerTest {
                 .andExpect(status().isBadRequest());
 
         verify(userRepository, never()).findById(any());
+    }
+
+    @Test
+    void meReturnsCallerFromJwtWithProfile() throws Exception {
+        when(userRepository.findById(7L)).thenReturn(Optional.of(user(7L, "caller@example.com", "old-pass")));
+        when(profileRepository.findByUserId(7L)).thenReturn(Optional.of(
+                Profile.builder().fullName("Nguyen Van A").phone("0901234567").build()));
+
+        String body = mockMvc.perform(get("/api/auth/me")
+                        .header("Authorization", bearer(7L, UserRole.CUSTOMER)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        JsonNode data = mapper.readTree(body).path("data");
+        assertThat(data.path("id").asLong()).isEqualTo(7L);
+        assertThat(data.path("email").asText()).isEqualTo("caller@example.com");
+        assertThat(data.path("role").asText()).isEqualTo("CUSTOMER");
+        assertThat(data.path("fullName").asText()).isEqualTo("Nguyen Van A");
+        assertThat(data.path("phone").asText()).isEqualTo("0901234567");
+        assertThat(data.has("password")).isFalse();
+    }
+
+    @Test
+    void meReturnsNullNameAndPhoneWithoutProfile() throws Exception {
+        when(userRepository.findById(7L)).thenReturn(Optional.of(user(7L, "caller@example.com", "old-pass")));
+        when(profileRepository.findByUserId(7L)).thenReturn(Optional.empty());
+
+        String body = mockMvc.perform(get("/api/auth/me")
+                        .header("Authorization", bearer(7L, UserRole.CUSTOMER)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        JsonNode data = mapper.readTree(body).path("data");
+        assertThat(data.path("email").asText()).isEqualTo("caller@example.com");
+        assertThat(data.path("fullName").isNull()).isTrue();
+        assertThat(data.path("phone").isNull()).isTrue();
+    }
+
+    @Test
+    void meRequiresToken() throws Exception {
+        mockMvc.perform(get("/api/auth/me"))
+                .andExpect(status().isUnauthorized());
+
+        verify(userRepository, never()).findById(any());
+    }
+
+    @Test
+    void meRejectsInvalidToken() throws Exception {
+        mockMvc.perform(get("/api/auth/me").header("Authorization", "Bearer not-a-jwt"))
+                .andExpect(status().isUnauthorized());
+
+        verify(userRepository, never()).findById(any());
+    }
+
+    @Test
+    void meReturnsNotFoundWhenJwtUserNoLongerExists() throws Exception {
+        when(userRepository.findById(99L)).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/auth/me")
+                        .header("Authorization", bearer(99L, UserRole.CUSTOMER)))
+                .andExpect(status().isNotFound());
     }
 
     private User user(Long id, String email, String rawPassword) {

@@ -6,6 +6,7 @@ import com.ticket_system.common.annotation.PublicApi;
 import com.ticket_system.manage_revenue_ticket.Dto.request.UserRequestDto;
 import com.ticket_system.manage_revenue_ticket.Dto.request.UserSession;
 import com.ticket_system.manage_revenue_ticket.Dto.request.UserUpdatePasswordRequestDto;
+import com.ticket_system.manage_revenue_ticket.Dto.response.CurrentUserResponse;
 import com.ticket_system.manage_revenue_ticket.entity.User;
 import com.ticket_system.manage_revenue_ticket.service.AuthService;
 import com.ticket_system.common.util.JwtUtil;
@@ -49,6 +50,13 @@ public class AuthController {
             @Valid @RequestBody UserUpdatePasswordRequestDto req){
         authService.updatePassWord(userId, req);
         return ResponseEntity.ok(BaseResponseDto.success(200, "Update Password successfully", null));
+    }
+
+    // Any logged-in role may read itself; "id" is set from the JWT by AuthInterceptor.
+    @GetMapping("/me")
+    public ResponseEntity<BaseResponseDto<CurrentUserResponse>> me(@RequestAttribute("id") Long userId){
+        return ResponseEntity.ok(BaseResponseDto.success(200, "Get current user successfully",
+                authService.getCurrentUser(userId)));
     }
 
     private final RedisTemplate<String, Object> redisTemplate;

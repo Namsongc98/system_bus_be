@@ -81,4 +81,34 @@ public class RevenueController {
         return ResponseEntity.ok(BaseResponseDto.success(200, "Revenue fetched", data));
     }
 
+    // ── Revenue Reports endpoints ────────────────────────────────────────────────
+
+    @GetMapping("/report")
+    @RoleRequired(UserRole.ADMIN)
+    public ResponseEntity<?> getRevenueReport(@RequestParam(required = false) String period) {
+        Map<String, Object> data = revenueService.getRevenueReport(period);
+        return ResponseEntity.ok(BaseResponseDto.success(200, "Revenue report fetched", data));
+    }
+
+    @GetMapping("/by-route")
+    @RoleRequired(UserRole.ADMIN)
+    public ResponseEntity<?> getRevenueByRoute(@RequestParam(required = false) String period) {
+        List<Map<String, Object>> routes = revenueService.getRevenueByRoute(period);
+        return ResponseEntity.ok(BaseResponseDto.success(200, "Revenue by route fetched", Map.of("routes", routes)));
+    }
+
+    @GetMapping("/by-date")
+    @RoleRequired(UserRole.ADMIN)
+    public ResponseEntity<?> getRevenueByDate(@RequestParam(required = false) String period) {
+        List<Map<String, Object>> heatmap = revenueService.getRevenueByDate(period);
+        return ResponseEntity.ok(BaseResponseDto.success(200, "Revenue by date fetched", Map.of("heatmap", heatmap)));
+    }
+
+    @GetMapping("/top-customers")
+    @RoleRequired(UserRole.ADMIN)
+    public ResponseEntity<?> getTopCustomers(@RequestParam(required = false) String period) {
+        List<Map<String, Object>> staff = revenueService.getTopCustomers(period);
+        return ResponseEntity.ok(BaseResponseDto.success(200, "Top customers fetched", Map.of("staff", staff)));
+    }
+
 }

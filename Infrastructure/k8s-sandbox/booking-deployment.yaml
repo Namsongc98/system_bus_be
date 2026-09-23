@@ -1,0 +1,31 @@
+# Bai tap K8s sandbox - chay tren VM2 (k3s) rieng, KHONG dung Kafka/MySQL/Redis
+# production that. Muc dich: thuc hanh Pod/Deployment/Service/Ingress/probe.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: booking-replica
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: booking-replica }
+  template:
+    metadata:
+      labels: { app: booking-replica }
+    spec:
+      containers:
+        - name: booking
+          image: ghcr.io/changeme/ticket-system-booking_ticket:latest
+          ports: [{ containerPort: 8081 }]
+          readinessProbe:
+            httpGet: { path: /actuator/health, port: 8081 }
+            initialDelaySeconds: 15
+          resources:
+            limits: { memory: "500Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: booking-replica-svc
+spec:
+  selector: { app: booking-replica }
+  ports: [{ port: 80, targetPort: 8081 }]

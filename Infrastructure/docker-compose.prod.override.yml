@@ -1,0 +1,51 @@
+# Override CHI dung tren VM production (6GB RAM). Khong dung cho local dev.
+# Muc dich: gioi han heap/memory tung service de tranh OOM khi chay chung
+# Kafka(3 broker) + Kong + MySQL + Redis(6 node) + 2 Spring Boot service tren 1 VM.
+#
+# Uoc luong RAM (can kiem tra lai tren VM that, con so nay la muc gioi han dat, khong phai RAM thuc te dung):
+#   3x broker (700m)      = 2100m
+#   mysql                 =  700m
+#   kong                  =  256m
+#   2x app service (500m) = 1000m
+#   6x redis (150m)       =  900m
+#   --------------------------------
+#   Tong gioi han cung    = ~4950m  (con lai cho OS + TLS proxy tren VM 6GB: ~1000m, kha cang, theo doi sat)
+services:
+  broker1:
+    mem_limit: 700m
+    environment:
+      KAFKA_HEAP_OPTS: "-Xmx400m -Xms400m"
+  broker2:
+    mem_limit: 700m
+    environment:
+      KAFKA_HEAP_OPTS: "-Xmx400m -Xms400m"
+  broker3:
+    mem_limit: 700m
+    environment:
+      KAFKA_HEAP_OPTS: "-Xmx400m -Xms400m"
+  kafka-ui:
+    # Tat kafka-ui tren production de tiet kiem RAM - chi bat khi can debug: --profile debug
+    profiles: ["debug"]
+
+  mysql:
+    mem_limit: 700m
+
+  kong:
+    mem_limit: 256m
+
+  redis-node-1: { mem_limit: 150m }
+  redis-node-2: { mem_limit: 150m }
+  redis-node-3: { mem_limit: 150m }
+  redis-node-4: { mem_limit: 150m }
+  redis-node-5: { mem_limit: 150m }
+  redis-node-6: { mem_limit: 150m }
+
+  booking-service:
+    mem_limit: 500m
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xmx350m"
+
+  manage-revenue-ticket:
+    mem_limit: 500m
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xmx350m"

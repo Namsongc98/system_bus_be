@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.time.LocalDateTime;
 
 public interface TripRepository extends JpaRepository<Trip, Long> {
     @Query(value = """
@@ -54,4 +55,16 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
           AND (:userId IS NULL OR t.driver.id = :userId)
     """)
     Long countCompletedTripsByDriverForOne(@Param("month") byte month, @Param("year") short year,@Param("userId") Long userId);
+
+    @Query("""
+        SELECT COUNT(t.id)
+        FROM Trip t
+        WHERE t.status = com.ticket_system.manage_revenue_ticket.Enum.TripStatus.COMPLETED
+          AND t.arrivalTime >= :start
+          AND t.arrivalTime < :end
+    """)
+    long countCompletedTrips(
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end
+    );
 }

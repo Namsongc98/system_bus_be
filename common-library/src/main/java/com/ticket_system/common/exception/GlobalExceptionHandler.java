@@ -88,6 +88,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler  {
 //                .body(BaseResponseDto.error(HttpStatus.UNAUTHORIZED.value(), message));
     }
 
+    // ⛔ 409: Xung đột trạng thái (ghế đã có người, chuyến hết chỗ)
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<Object> handleConflict(ConflictException ex, HttpServletRequest request) {
+        return buildResponseEntity(HttpStatus.CONFLICT, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<Object> handleResourceNotFound(ResourceNotFoundException ex,HttpServletRequest request) {
      return    buildResponseEntity(HttpStatus.NOT_FOUND, ex.getMessage(), request);

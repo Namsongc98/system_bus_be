@@ -15,21 +15,45 @@ import java.util.List;
 import java.util.Map;
 
 public interface TicketRepository extends JpaRepository<Ticket, Long> {
+    // Vé chưa huỷ của 1 chuyến — dùng để so với sức chứa xe.
     @Query(value = """
-    SELECT COUNT(tk.id)
-    FROM tickets tk
-    JOIN trips tr ON tk.trip_id = tr.id
-    WHERE tr.bus_id = :busId
+    SELECT COUNT(*)
+    FROM tickets
+    WHERE trip_id = :tripId
+      AND status_ticket <> 'CANCELLED'
 """, nativeQuery = true)
-    int countTicketsByBusId(@Param("busId") Long busId);
+    long countActiveTicketsByTripId(@Param("tripId") Long tripId);
 
+    // Ghế đang có vé chưa huỷ (bỏ qua vé excludeTicketId khi sửa vé; null khi tạo).
     @Query(value = """
-    SELECT COUNT(tk.id)
-    FROM tickets tk
-    JOIN trips tr ON tk.trip_id = tr.id
-    WHERE tr.bus_id = :busId
+    SELECT COUNT(*)
+    FROM tickets
+    WHERE trip_id = :tripId
+      AND seat_number = :seatNumber
+      AND status_ticket <> 'CANCELLED'
+      AND (:excludeTicketId IS NULL OR id <> :excludeTicketId)
 """, nativeQuery = true)
-    int countTicketFollowBus(@Param("busId") Long busId);
+    long countActiveSeat(@Param("tripId") Long tripId,
+                         @Param("seatNumber") Integer seatNumber,
+                         @Param("excludeTicketId") Long excludeTicketId);
+
+    default boolean existsActiveSeat(Long tripId, Integer seatNumber, Long excludeTicketId) {
+        return countActiveSeat(tripId, seatNumber, excludeTicketId) > 0;
+    }
+
+    // Ghế từng có vé bị huỷ trên chuyến này (N1: báo ADMIN khi ghế được đặt lại).
+    @Query(value = """
+    SELECT COUNT(*)
+    FROM tickets
+    WHERE trip_id = :tripId
+      AND seat_number = :seatNumber
+      AND status_ticket = 'CANCELLED'
+""", nativeQuery = true)
+    long countCancelledSeat(@Param("tripId") Long tripId, @Param("seatNumber") Integer seatNumber);
+
+    default boolean existsCancelledSeat(Long tripId, Integer seatNumber) {
+        return countCancelledSeat(tripId, seatNumber) > 0;
+    }
 
     @Query(value = """
         SELECT

@@ -2,20 +2,20 @@ package com.ticket_system.manage_revenue_ticket.service;
 
 
 import com.ticket_system.common.Dto.request.TicketRequestDto;
+import com.ticket_system.common.exception.ConflictException;
 import com.ticket_system.manage_revenue_ticket.Enum.TicketStatus;
-import com.ticket_system.manage_revenue_ticket.entity.*;
-import com.ticket_system.manage_revenue_ticket.repository.*;
 import com.ticket_system.manage_revenue_ticket.entity.*;
 import com.ticket_system.common.exception.ResourceNotFoundException;
 import com.ticket_system.manage_revenue_ticket.repository.*;
 import com.ticket_system.manage_revenue_ticket.Enum.CustomerStatus;
 import com.ticket_system.manage_revenue_ticket.Enum.TransactionType;
 import com.ticket_system.manage_revenue_ticket.Enum.TripStatus;
-import com.ticket_system.common.Enum.UserRole;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -23,37 +23,35 @@ import java.util.*;
 
 @Service
 public class TicketService {
-    @Autowired
-    private TicketRepository ticketRepository;
+    // Tên constraint trong V2__tickets_unique_active_seat.sql
+    static final String ACTIVE_SEAT_CONSTRAINT = "uk_tickets_trip_active_seat";
 
-    @Autowired
-    private TripRepository tripRepository;
-
-    @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private BusesRepository busesRepository;
-
-    @Autowired
-    private BaseLoyaltyPointsService baseLoyaltyPointsService;
-
-    @Autowired
-    private LoyaltyPointRepository loyaltyPointRepository;
-
-    @Autowired
-    private BaseLoyaltyPointsRepository baseLoyaltyPointsRepository;
-
-    @Autowired
-    private LoyaltyPointsService loyaltyPointsService;
-
-    @Autowired
-    LoyaltyRewardRepository loyaltyRewardRepository;
+    private final TicketRepository ticketRepository;
+    private final TripRepository tripRepository;
+    private final UserRepository userRepository;
+    private final LoyaltyPointRepository loyaltyPointRepository;
+    private final LoyaltyRewardRepository loyaltyRewardRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @PersistenceContext
     private EntityManager entityManager;
 
+    public TicketService(TicketRepository ticketRepository,
+                         TripRepository tripRepository,
+                         UserRepository userRepository,
+                         LoyaltyPointRepository loyaltyPointRepository,
+                         LoyaltyRewardRepository loyaltyRewardRepository,
+                         ApplicationEventPublisher eventPublisher) {
+        this.ticketRepository = ticketRepository;
+        this.tripRepository = tripRepository;
+        this.userRepository = userRepository;
+        this.loyaltyPointRepository = loyaltyPointRepository;
+        this.loyaltyRewardRepository = loyaltyRewardRepository;
+        this.eventPublisher = eventPublisher;
+    }
+
     // tạo vé
+    @Transactional
     public Ticket createTicket(TicketRequestDto responseDto){
         // tách các service thay vì truy cập vào repository
         Trip trip =  tripRepository.findById(responseDto.getTripId())
@@ -70,11 +68,7 @@ public class TicketService {
         if(customer.getUserStatus() == CustomerStatus.BOOKED){
             throw new IllegalArgumentException("Khách hàng đã đặt vé");
         };
-        Buses bus = trip.getBus();
-        int countTicket = ticketRepository.countTicketsByBusId(bus.getId());
-        if(countTicket == bus.getCapacity()){
-            throw  new ResourceNotFoundException("chuyến đi có số lượng "+ bus.getCapacity() + " số vé "+countTicket+" đã hết vé");
-        }
+        assertCanBookSeat(trip, responseDto.getSeatNumber());
         Ticket ticket = Ticket.builder()
                 .trip(trip)
                 .seller(seller)
@@ -84,9 +78,9 @@ public class TicketService {
                 .statusTicket(TicketStatus.PENDING)
                 .issuedAt(responseDto.getIssuedAt())
                 .build();
-        Ticket savedTicket = ticketRepository.save(ticket);
-        entityManager.flush();
+        Ticket savedTicket = saveSeat(ticket);
         entityManager.refresh(savedTicket);
+        publishIfSeatRebooked(savedTicket);
 
 //        List<LoyaltyPoint> loyaltyPoint = loyaltyPointRepository.findAllByCustomerIdOrderByUpdatedAtDesc(customer.getId());
 //        customer.setUserStatus(CustomerStatus.BOOKED);
@@ -117,6 +111,7 @@ public class TicketService {
         return savedTicket;
     };
     // update vé
+    @Transactional
     public Ticket updateTicket(Long ticketId, TicketRequestDto responseDto){
 
         Ticket ticket;
@@ -134,18 +129,28 @@ public class TicketService {
         User seller = userRepository.findById(responseDto.getSellerId())
                 .orElseThrow(()->new ResourceNotFoundException("Không thấy người bán này"));
         if(responseDto.getPrice() != null) ticket.setPrice(responseDto.getPrice());
-        if(responseDto.getSeatNumber() !=null ) ticket.setSeatNumber(responseDto.getSeatNumber());
+        boolean seatChanged = responseDto.getSeatNumber() != null
+                && !responseDto.getSeatNumber().equals(ticket.getSeatNumber());
+        if(seatChanged){
+            // Ghế thuộc chuyến của chính vé, không phải tripId trong body.
+            assertSeatFree(ticket.getTrip(), responseDto.getSeatNumber(), ticket.getId());
+            ticket.setSeatNumber(responseDto.getSeatNumber());
+        }
         ticket.setSeller(seller);
         ticket.setCustomer(customer);
         customer.setUserStatus(CustomerStatus.BOOKED);
         userRepository.save(customer);
-        ticketRepository.save(ticket);
+        saveSeat(ticket);
+        if(seatChanged){
+            publishIfSeatRebooked(ticket);
+        }
         return ticket;
     };
 
     public List<Map<String, Object>> getTicketSummaryByBusAndTime(Long busId, LocalDateTime fromDate, LocalDateTime toDate) {
         return ticketRepository.getTicketSummaryByBusAndTime(busId, fromDate, toDate);
     }
+    @Transactional
     public Ticket createTicketByLoyalty(TicketRequestDto responseDto, Long idReward){
         Trip trip =  tripRepository.findById(responseDto.getTripId())
                 .orElseThrow(()->new ResourceNotFoundException("Không tìm thấy chuyến xe " + responseDto.getTripId()));
@@ -161,11 +166,7 @@ public class TicketService {
         if(customer.getUserStatus() == CustomerStatus.BOOKED){
             throw new IllegalArgumentException("Khách hàng đã đặt vé");
         };
-        Buses bus = trip.getBus();
-        int countTicket = ticketRepository.countTicketsByBusId(bus.getId());
-        if(countTicket == bus.getCapacity()){
-            throw  new ResourceNotFoundException("chuyến đi có số lượng "+ bus.getCapacity() + " số vé "+countTicket+" đã hết vé");
-        }
+        assertCanBookSeat(trip, responseDto.getSeatNumber());
 
         LoyaltyReward reward = loyaltyRewardRepository.findById(idReward)
                 .orElseThrow(()->new ResourceNotFoundException("Không thấy ưu đãi này"));
@@ -206,11 +207,55 @@ public class TicketService {
                 .seatNumber(responseDto.getSeatNumber())
                 .issuedAt(responseDto.getIssuedAt())
                 .build();
-        ticketRepository.save(ticket);
+        saveSeat(ticket);
+        publishIfSeatRebooked(ticket);
 
         customer.setUserStatus(CustomerStatus.BOOKED);
         userRepository.save(customer);
         return ticket;
+    }
+
+    // Tạo vé mới: số ghế hợp lệ, chuyến còn chỗ, ghế chưa có người (spec review 0.8: D2, D3).
+    private void assertCanBookSeat(Trip trip, Integer seatNumber) {
+        Buses bus = trip.getBus();
+        long activeTickets = ticketRepository.countActiveTicketsByTripId(trip.getId());
+        if(activeTickets >= bus.getCapacity()){
+            throw new ConflictException("Chuyến xe đã hết chỗ (" + activeTickets + "/" + bus.getCapacity() + ")");
+        }
+        assertSeatFree(trip, seatNumber, null);
+    }
+
+    private void assertSeatFree(Trip trip, Integer seatNumber, Long excludeTicketId) {
+        int capacity = trip.getBus().getCapacity();
+        if(seatNumber == null || seatNumber < 1 || seatNumber > capacity){
+            throw new IllegalArgumentException("Số ghế phải từ 1 đến " + capacity);
+        }
+        if(ticketRepository.existsActiveSeat(trip.getId(), seatNumber, excludeTicketId)){
+            throw new ConflictException("Ghế " + seatNumber + " đã có người đặt");
+        }
+    }
+
+    // Lớp chặn cuối: 2 request cùng ghế lọt qua check trên → unique constraint của DB.
+    private Ticket saveSeat(Ticket ticket) {
+        try {
+            return ticketRepository.saveAndFlush(ticket);
+        } catch (DataIntegrityViolationException ex) {
+            String cause = ex.getMostSpecificCause().getMessage();
+            if(cause != null && cause.contains(ACTIVE_SEAT_CONSTRAINT)){
+                throw new ConflictException("Ghế " + ticket.getSeatNumber() + " đã có người đặt");
+            }
+            throw ex;
+        }
+    }
+
+    // N1: ghế từng có vé bị huỷ được đặt lại → báo ADMIN gọi cho người vừa đặt (sau commit).
+    private void publishIfSeatRebooked(Ticket ticket) {
+        Long tripId = ticket.getTrip().getId();
+        if(ticketRepository.existsCancelledSeat(tripId, ticket.getSeatNumber())){
+            Long customerId = ticket.getCustomer() == null ? null : ticket.getCustomer().getId();
+            eventPublisher.publishEvent(
+                    new SeatRebookedEvent(tripId, ticket.getSeatNumber(), ticket.getId(), customerId));
+        }
     }
 
     // hủy vé

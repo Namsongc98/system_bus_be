@@ -20,8 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Proves V1__baseline.sql builds a schema that Hibernate {@code validate} accepts for all
- * 13 entities. The context only starts if Flyway migrated and validation passed.
+ * Proves the migrations (V1 baseline, V2 unique active seat) build a schema that Hibernate
+ * {@code validate} accepts for all 13 entities. The context only starts if Flyway migrated and validation passed.
  * Requires a running Docker daemon.
  */
 @DataJpaTest
@@ -44,14 +44,15 @@ class FlywaySchemaValidationTest {
     private BusesRepository busesRepository;
 
     @Test
-    void flywayAppliesV1AndHibernateValidatePasses() {
+    void flywayAppliesAllMigrationsAndHibernateValidatePasses() {
         Integer migrations = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE version IS NOT NULL", Integer.class);
-        Integer successfulV1 = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '1' AND success = 1", Integer.class);
+        Integer successful = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM flyway_schema_history WHERE version IN ('1', '2') AND success = 1",
+                Integer.class);
 
-        assertThat(migrations).isEqualTo(1);
-        assertThat(successfulV1).isEqualTo(1);
+        assertThat(migrations).isEqualTo(2);
+        assertThat(successful).isEqualTo(2);
     }
 
     @Test
@@ -76,7 +77,7 @@ class FlywaySchemaValidationTest {
                 "trips_fk_route", "trips_fk_bus", "trips_fk_driver",
                 "tickets_fk_trip", "tickets_fk_customer", "tickets_fk_seller",
                 "revenues_fk_trip", "salaries_fk_user", "fk_profiles_users");
-        assertThat(uniques).contains("email_unique", "plate_number");
+        assertThat(uniques).contains("email_unique", "plate_number", "uk_tickets_trip_active_seat");
     }
 
     private List<String> constraintNames(String type) {

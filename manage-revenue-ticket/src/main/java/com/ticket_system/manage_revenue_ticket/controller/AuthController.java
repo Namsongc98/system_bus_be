@@ -6,13 +6,12 @@ import com.ticket_system.common.annotation.PublicApi;
 import com.ticket_system.manage_revenue_ticket.Dto.request.UserRequestDto;
 import com.ticket_system.manage_revenue_ticket.Dto.request.UserSession;
 import com.ticket_system.manage_revenue_ticket.Dto.request.UserUpdatePasswordRequestDto;
+import com.ticket_system.manage_revenue_ticket.Dto.response.CurrentUserResponse;
 import com.ticket_system.manage_revenue_ticket.entity.User;
 import com.ticket_system.manage_revenue_ticket.service.AuthService;
-import com.ticket_system.manage_revenue_ticket.service.UserService;
 import com.ticket_system.common.util.JwtUtil;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,14 +25,9 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class AuthController {
 
-    @Autowired
-    UserService userService;
+    private final AuthService authService;
 
-    @Autowired
-    AuthService authService;
-
-    @Autowired
-    JwtUtil jwtUtil;
+    private final JwtUtil jwtUtil;
 
     @PostMapping("/register")
     @PublicApi
@@ -49,15 +43,20 @@ public class AuthController {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(BaseResponseDto.success(201, "Register successfully", token));
     }
+    // Any logged-in role may change its own password; "id" is set from the JWT by AuthInterceptor.
     @PutMapping("/update-password")
-    public ResponseEntity<BaseResponseDto<TokenResponse>> updatePass(@RequestBody UserUpdatePasswordRequestDto req){
-        User user = new User();
-        user.setEmail(req.getEmail());
-        user.setPassword(req.getPassword());
-        String oldPassword = req.getOldPassword();
-        authService.updatePassWord(req, oldPassword);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(BaseResponseDto.success(201, "Update Password successfully",null));
+    public ResponseEntity<BaseResponseDto<TokenResponse>> updatePass(
+            @RequestAttribute("id") Long userId,
+            @Valid @RequestBody UserUpdatePasswordRequestDto req){
+        authService.updatePassWord(userId, req);
+        return ResponseEntity.ok(BaseResponseDto.success(200, "Update Password successfully", null));
+    }
+
+    // Any logged-in role may read itself; "id" is set from the JWT by AuthInterceptor.
+    @GetMapping("/me")
+    public ResponseEntity<BaseResponseDto<CurrentUserResponse>> me(@RequestAttribute("id") Long userId){
+        return ResponseEntity.ok(BaseResponseDto.success(200, "Get current user successfully",
+                authService.getCurrentUser(userId)));
     }
 
     private final RedisTemplate<String, Object> redisTemplate;

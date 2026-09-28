@@ -1,12 +1,13 @@
 package com.ticket_system.manage_revenue_ticket.controller;
 
 import com.ticket_system.common.Dto.response.BaseResponseDto;
+import com.ticket_system.common.Enum.UserRole;
+import com.ticket_system.common.annotation.RoleRequired;
 import com.ticket_system.manage_revenue_ticket.Dto.request.TripRequestDto;
 
 import com.ticket_system.manage_revenue_ticket.Dto.response.RevenueResponse;
 import com.ticket_system.manage_revenue_ticket.entity.Trip;
 import com.ticket_system.manage_revenue_ticket.service.TripService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -17,17 +18,20 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/trip")
+@RoleRequired(UserRole.ADMIN)
 public class TripController {
-    @Autowired
-    private TripService tripService;
+
+    private final TripService tripService;
 
     @PostMapping
+    @RoleRequired(UserRole.ADMIN)
     ResponseEntity<BaseResponseDto<Trip>> createTrip(@RequestBody TripRequestDto requestDto){
         Trip trip = tripService.createTrip(requestDto);
         return ResponseEntity.ok(BaseResponseDto.success(201,"create success", trip));
     }
     // các chuyến đi đã lên lịch
     @GetMapping("/scheduled")
+    @RoleRequired(UserRole.ADMIN)
     ResponseEntity<BaseResponseDto<Page<Map<String, Object>>>> getTripScheduled(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size
@@ -39,6 +43,7 @@ public class TripController {
 
 
     @PutMapping("/{tripId}")
+    @RoleRequired(UserRole.ADMIN)
     ResponseEntity<BaseResponseDto<Trip>> updateTrip(@PathVariable String tripId,@RequestBody TripRequestDto requestDto ){
         Trip trip = tripService.updateTrip(Long.parseLong(tripId),requestDto);
         return ResponseEntity.ok(BaseResponseDto.success(201,"create success", trip));
@@ -51,6 +56,7 @@ public class TripController {
   }
 
   @GetMapping("/{tripId}/revenue")
+  @RoleRequired(UserRole.ADMIN)
   public RevenueResponse getRevenue(@PathVariable int tripId) {
     return tripService.getRevenue(tripId);
   }

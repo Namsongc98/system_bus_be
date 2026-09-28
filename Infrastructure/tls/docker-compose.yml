@@ -1,0 +1,32 @@
+# NGINX o day CHI lam TLS termination truoc Kong - khong route/rate-limit,
+# Kong (../kong) da lam viec do roi. Tranh 2 lop proxy trung chuc nang.
+# Kong nam trong compose file rieng (../kong/docker-compose.yml) nhung cung
+# ticket-system-network nen NGINX goi duoc qua ten service "kong".
+# Thu tu start: kong PHAI len truoc nginx (xem DEPLOYMENT.md), khong dung
+# depends_on vi khac compose file.
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: tls-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    networks:
+      - ticket-system-network
+
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: "true"   # container nay khong tu chay gi ca, chi dung de goi 'docker compose run certbot ...'
+
+networks:
+  ticket-system-network:
+    external: true

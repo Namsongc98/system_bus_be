@@ -1,0 +1,12 @@
+# DEV override: Kong định tuyến tới BE chạy trên máy host (IntelliJ / mvn spring-boot:run).
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --force-recreate
+# Quay lại BE chạy bằng container (Infrastructure/app):
+#   docker compose up -d --force-recreate
+services:
+  kong:
+    volumes:
+      # Compose merge volume theo đường dẫn đích → thay mount kong.yml bằng kong.dev.yml
+      - ./kong.dev.yml:/etc/kong/kong.yml:ro
+    extra_hosts:
+      # Docker Desktop (macOS/Windows) có sẵn host.docker.internal; Linux cần dòng này
+      - "host.docker.internal:host-gateway"

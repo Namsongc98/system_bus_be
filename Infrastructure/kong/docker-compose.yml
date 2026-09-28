@@ -15,7 +15,7 @@ services:
       KONG_LOG_LEVEL: notice
     ports:
       - "8000:8000"  # HTTP proxy — điểm vào duy nhất cho client
-      - "8001:8001"  # Admin API — chỉ mở local, không expose ra internet
+      - "127.0.0.1:8001:8001"  # Admin API không xác thực — chỉ bind loopback, máy khác trong LAN không vào được
     volumes:
       - ./kong.yml:/etc/kong/kong.yml:ro
     networks:

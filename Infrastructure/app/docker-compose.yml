@@ -1,8 +1,9 @@
 # App layer: 2 Spring Boot service hien co.
 # Khong doi container_name: phai khop target trong ../kong/kong.yml
 # (booking-container:8081, manage-revenue-ticket:8082).
-# Ca 2 service phai join CA HAI network: ticket-system-network (MySQL/Kafka/Kong)
-# va redis-cluster-net (Redis cluster) - 2 network nay tach rieng trong setup hien tai.
+# Ca 2 service phai join CA BA network (tach rieng trong setup hien tai):
+# ticket-system-network (MySQL, Kong), redis-cluster-net (Redis cluster),
+# kafka_kafka-net (broker1-3, tao boi ../kafka/docker-compose.yml, project "kafka").
 services:
   booking-service:
     build:
@@ -17,10 +18,14 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql-ticket-system:3306/quan-ly-ban-hang
       SPRING_KAFKA_BOOTSTRAP_SERVERS: broker1:29092,broker2:29092,broker3:29092
-      SPRING_DATA_REDIS_CLUSTER_NODES: redis-1:7001,redis-2:7002,redis-3:7003,redis-4:7004,redis-5:7005,redis-6:7006
+      # RedisConfig (common-library) đọc spring.redis.cluster.nodes, không phải spring.data.redis.*
+      SPRING_REDIS_CLUSTER_NODES: redis-1:7001,redis-2:7002,redis-3:7003,redis-4:7004,redis-5:7005,redis-6:7006
+      # Trong container: dùng thẳng IP 172.x mà cluster announce, không đổi sang 127.0.0.1
+      APP_REDIS_MAP_DOCKER_IPS_TO_LOCALHOST: "false"
     networks:
       - ticket-system-network
       - redis-cluster-net
+      - kafka-net
 
   manage-revenue-ticket:
     build:
@@ -35,10 +40,14 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql-ticket-system:3306/quan-ly-ban-hang
       SPRING_KAFKA_BOOTSTRAP_SERVERS: broker1:29092,broker2:29092,broker3:29092
-      SPRING_DATA_REDIS_CLUSTER_NODES: redis-1:7001,redis-2:7002,redis-3:7003,redis-4:7004,redis-5:7005,redis-6:7006
+      # RedisConfig (common-library) đọc spring.redis.cluster.nodes, không phải spring.data.redis.*
+      SPRING_REDIS_CLUSTER_NODES: redis-1:7001,redis-2:7002,redis-3:7003,redis-4:7004,redis-5:7005,redis-6:7006
+      # Trong container: dùng thẳng IP 172.x mà cluster announce, không đổi sang 127.0.0.1
+      APP_REDIS_MAP_DOCKER_IPS_TO_LOCALHOST: "false"
     networks:
       - ticket-system-network
       - redis-cluster-net
+      - kafka-net
 
 networks:
   ticket-system-network:
@@ -46,3 +55,6 @@ networks:
   redis-cluster-net:
     external: true
     name: redis-cluster-net
+  kafka-net:
+    external: true
+    name: kafka_kafka-net

@@ -9,13 +9,19 @@ upstreams:
     healthchecks:
       active:
         type: http
-        http_path: /actuator/health
+        # readiness = readinessState + db + redis (application-prod.properties): DB/Redis sập
+        # thì Kong ngừng định tuyến. Không gồm mail. Timeout mặc định 1s quá ngắn (health đầy đủ ~2s).
+        http_path: /actuator/health/readiness
+        timeout: 5
         healthy:
           interval: 10
           successes: 2
         unhealthy:
           interval: 5
           http_failures: 3
+          # Mặc định 0 = tắt: BE chết/treo vẫn nhận request (502/504). Bật để loại target.
+          tcp_failures: 2
+          timeouts: 3
     targets:
       - target: booking-container:8081
         weight: 100
@@ -26,13 +32,19 @@ upstreams:
     healthchecks:
       active:
         type: http
-        http_path: /actuator/health
+        # readiness = readinessState + db + redis (application-prod.properties): DB/Redis sập
+        # thì Kong ngừng định tuyến. Không gồm mail. Timeout mặc định 1s quá ngắn (health đầy đủ ~2s).
+        http_path: /actuator/health/readiness
+        timeout: 5
         healthy:
           interval: 10
           successes: 2
         unhealthy:
           interval: 5
           http_failures: 3
+          # Mặc định 0 = tắt: BE chết/treo vẫn nhận request (502/504). Bật để loại target.
+          tcp_failures: 2
+          timeouts: 3
     targets:
       - target: manage-revenue-ticket:8082
         weight: 100

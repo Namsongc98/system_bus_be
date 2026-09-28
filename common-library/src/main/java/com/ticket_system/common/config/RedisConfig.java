@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.lettuce.core.cluster.ClusterClientOptions;
 import io.lettuce.core.cluster.ClusterTopologyRefreshOptions;
+import io.lettuce.core.internal.HostAndPort;
 import io.lettuce.core.resource.ClientResources;
 import io.lettuce.core.resource.DnsResolver;
 import io.lettuce.core.resource.MappingSocketAddressResolver;
@@ -34,18 +35,26 @@ public class RedisConfig {
   @Value("${spring.redis.cluster.nodes}")
   private List<String> clusterNodes;
 
+  // true: service chạy trên máy host (mvn spring-boot:run) — cluster announce IP Docker 172.x
+  // không tới được từ host, nên đổi sang 127.0.0.1 (cổng 7001–7006 đã publish).
+  // false: service chạy trong container cùng redis-cluster-net — dùng thẳng IP 172.x.
+  @Value("${app.redis.map-docker-ips-to-localhost:true}")
+  private boolean mapDockerIpsToLocalhost;
+
+  // Nếu IP bắt đầu bằng 172 (IP nội bộ Docker) và đang chạy trên host, đổi thành 127.0.0.1
+  static HostAndPort remapDockerAddress(HostAndPort hostAndPort, boolean mapDockerIpsToLocalhost) {
+    if (mapDockerIpsToLocalhost && hostAndPort.getHostText().startsWith("172.")) {
+      return HostAndPort.of("127.0.0.1", hostAndPort.getPort());
+    }
+    return hostAndPort;
+  }
+
   @Bean
   public RedisConnectionFactory redisConnectionFactory() {
-    // 1. Map toàn bộ IP dải 172.x.x.x về 127.0.0.1
+    // 1. Map toàn bộ IP dải 172.x.x.x về 127.0.0.1 (chỉ khi chạy trên host)
     ClientResources clientResources = ClientResources.builder()
       .socketAddressResolver(MappingSocketAddressResolver.create(DnsResolver.jvmDefault(),
-        hostAndPort -> {
-          // Nếu IP bắt đầu bằng 172 (IP nội bộ Docker), đổi thành 127.0.0.1
-          if (hostAndPort.getHostText().startsWith("172.")) {
-            return io.lettuce.core.internal.HostAndPort.of("127.0.0.1", hostAndPort.getPort());
-          }
-          return hostAndPort;
-        }))
+        hostAndPort -> remapDockerAddress(hostAndPort, mapDockerIpsToLocalhost)))
       .build();
 
     // 2. Cấu hình Cluster Nodes từ application.properties

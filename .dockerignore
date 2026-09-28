@@ -1,0 +1,11 @@
+# Build context is ticket-system/ — keep secrets, build output and runtime data out of it.
+.env
+.env.*
+**/target/
+Infrastructure/
+review/
+.git/
+.github/
+.idea/
+.vscode/
+*.iml

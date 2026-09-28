@@ -1,39 +1,54 @@
+# Kafka 3 broker, chế độ KRaft (không Zookeeper) — topic `order-events` (booking_ticket → manage-revenue-ticket).
+# Chạy: docker compose up -d   (trong thư mục này; project "kafka")
+# Ai kết nối tới đây:
+#   - BE trong container (../app):   broker1:29092,broker2:29092,broker3:29092  (listener PLAINTEXT, mạng kafka_kafka-net)
+#   - BE trong IntelliJ / mvn:       localhost:9092,localhost:9093,localhost:9094 (listener PLAINTEXT_HOST, cổng publish)
+#     (spring.kafka.bootstrap-servers trong application.properties của 2 service)
+# Mỗi broker vừa là broker (lưu dữ liệu) vừa là controller (bầu leader) — 3 node = chịu được 1 node chết.
 services:
 
   broker1:
-    image: confluentinc/cp-kafka:7.5.0
-    container_name: broker1
+    image: confluentinc/cp-kafka:7.5.0   # Kafka 3.5 (Confluent); cả 3 broker phải cùng bản
+    container_name: broker1              # tên container = hostname = tên dùng trong LISTENERS và bootstrap-servers của ../app
     hostname: broker1
     ports:
-      - "9092:9092"
+      - "9092:9092"                      # chỉ publish listener PLAINTEXT_HOST cho máy host (IntelliJ); 29092/29093 chỉ trong mạng Docker
     environment:
 
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 1                   # id duy nhất trong cluster (broker2 = 2, broker3 = 3)
+      KAFKA_PROCESS_ROLES: broker,controller   # KRaft: node vừa lưu dữ liệu vừa tham gia bầu leader
 
+      # Danh sách node bầu controller: <node_id>@<host>:<cổng CONTROLLER> — giống hệt ở cả 3 broker
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@broker1:29093,2@broker2:29093,3@broker3:29093
 
+      # LISTENERS = cổng broker thật sự mở; ADVERTISED_LISTENERS = địa chỉ broker TRẢ VỀ cho client để kết nối tiếp.
+      #   PLAINTEXT      broker1:29092  → container ↔ container (broker khác, ../app, kafka-ui)
+      #   CONTROLLER     broker1:29093  → chỉ giữa các controller (không advertise cho client)
+      #   PLAINTEXT_HOST 0.0.0.0:9092   → advertise localhost:9092 cho client trên máy host (IntelliJ)
+      # Client nối vào listener nào sẽ nhận địa chỉ của đúng listener đó → container không bao giờ nhận "localhost".
       KAFKA_LISTENERS: PLAINTEXT://broker1:29092,CONTROLLER://broker1:29093,PLAINTEXT_HOST://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker1:29092,PLAINTEXT_HOST://localhost:9092
 
+      # Tên listener → giao thức (tất cả không mã hoá; chỉ dùng trong mạng nội bộ/dev)
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
 
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER   # listener nào dành cho controller
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT   # broker nói chuyện với nhau qua listener nào (29092)
 
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3     # topic nội bộ lưu offset consumer: nhân bản trên cả 3 broker
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2        # ghi transaction cần ít nhất 2 bản đồng bộ → 1 broker chết vẫn chạy
 
-      CLUSTER_ID: q1Sh-9_ISia_zwGINzRvyQ
+      CLUSTER_ID: q1Sh-9_ISia_zwGINzRvyQ   # id cluster KRaft — PHẢI giống nhau ở 3 broker; đổi = phải xoá volume dữ liệu
 
     volumes:
-      - broker1-data:/var/lib/kafka/data
+      - broker1-data:/var/lib/kafka/data   # volume có tên (khai báo cuối file) → dữ liệu topic còn sau `down`/`up`
 
     networks:
-      - kafka-net
+      - kafka-net                        # mạng riêng của Kafka; ../app join mạng này với tên thật kafka_kafka-net
 
 
+  # broker2: như broker1 — khác KAFKA_NODE_ID 2, hostname broker2, cổng host 9093, volume broker2-data
   broker2:
     image: confluentinc/cp-kafka:7.5.0
     container_name: broker2
@@ -68,6 +83,7 @@ services:
       - kafka-net
 
 
+  # broker3: như broker1 — khác KAFKA_NODE_ID 3, hostname broker3, cổng host 9094, volume broker3-data
   broker3:
     image: confluentinc/cp-kafka:7.5.0
     container_name: broker3
@@ -102,13 +118,13 @@ services:
       - kafka-net
 
 
-  kafka-ui:
+  kafka-ui:                              # giao diện web xem topic/consumer group: http://localhost:9000
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
     ports:
-      - "9000:8080"
+      - "9000:8080"                      # host 9000 → UI trong container 8080
 
-    depends_on:
+    depends_on:                          # chỉ đợi container broker được tạo, không đợi Kafka sẵn sàng
       - broker1
       - broker2
       - broker3
@@ -116,18 +132,19 @@ services:
     environment:
 
       KAFKA_CLUSTERS_0_NAME: ticket-system
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: broker1:29092,broker2:29092,broker3:29092
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: broker1:29092,broker2:29092,broker3:29092   # listener nội bộ, như ../app
 
     networks:
       - kafka-net
+    # Prod: tắt bằng profiles ["debug"] trong ../docker-compose.prod.override.yml
 
 
-volumes:
+volumes:                                 # volume có tên, Docker đặt tên thật kafka_broker1-data… (xoá: down -v)
   broker1-data:
   broker2-data:
   broker3-data:
 
 
 networks:
-  kafka-net:
-    driver: bridge
+  kafka-net:                             # file này TẠO mạng (không external) → tên thật kafka_kafka-net
+    driver: bridge                       # (<project>_<network>); ../app khai báo external name: kafka_kafka-net

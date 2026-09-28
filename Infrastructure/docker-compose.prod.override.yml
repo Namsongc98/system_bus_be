@@ -10,11 +10,19 @@
 #   6x redis (150m)       =  900m
 #   --------------------------------
 #   Tong gioi han cung    = ~4950m  (con lai cho OS + TLS proxy tren VM 6GB: ~1000m, kha cang, theo doi sat)
+#
+# Cách dùng: file này KHÔNG chạy một mình — ghép sau compose gốc của từng nhóm bằng `-f`, vd:
+#   docker compose -f kafka/docker-compose.yml -f docker-compose.prod.override.yml up -d
+# Compose gộp theo TÊN SERVICE: key dưới `services:` phải trùng tên service trong file gốc
+# (broker1 ← kafka/, mysql ← mysql/, kong ← kong/, redis-node-N ← redis-cluster/, booking-service /
+#  manage-revenue-ticket ← app/). Service không có trong file gốc đang ghép sẽ bị coi là service mới
+# thiếu image → lỗi; nên chỉ ghép khi file gốc tương ứng cũng có trong lệnh.
+# mem_limit = trần RAM của container (vượt → bị kill OOM); heap Java/Kafka đặt thấp hơn để chừa bộ nhớ ngoài heap.
 services:
   broker1:
     mem_limit: 700m
     environment:
-      KAFKA_HEAP_OPTS: "-Xmx400m -Xms400m"
+      KAFKA_HEAP_OPTS: "-Xmx400m -Xms400m"   # heap cố định 400m trong trần 700m (phần còn lại: page cache, off-heap)
   broker2:
     mem_limit: 700m
     environment:
@@ -33,6 +41,7 @@ services:
   kong:
     mem_limit: 256m
 
+  # Tên service redis-node-N (không phải container_name redis-N)
   redis-node-1: { mem_limit: 150m }
   redis-node-2: { mem_limit: 150m }
   redis-node-3: { mem_limit: 150m }
@@ -40,10 +49,10 @@ services:
   redis-node-5: { mem_limit: 150m }
   redis-node-6: { mem_limit: 150m }
 
-  booking-service:
+  booking-service:                       # tên service trong app/ (container booking-container)
     mem_limit: 500m
     environment:
-      JAVA_TOOL_OPTIONS: "-Xmx350m"
+      JAVA_TOOL_OPTIONS: "-Xmx350m"      # JVM tự đọc biến này; heap 350m trong trần 500m (metaspace, thread stack…)
 
   manage-revenue-ticket:
     mem_limit: 500m

@@ -39,7 +39,7 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(request -> {
                     CorsConfiguration config = new CorsConfiguration();
                     config.setAllowedOriginPatterns(List.of("*")); // ✅ dùng OriginPatterns thay vì Origins
-                    config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+                    config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
                     config.setAllowedHeaders(List.of("*"));
                     config.setAllowCredentials(true);
                     return config;
@@ -51,7 +51,10 @@ public class SecurityConfig {
                                 "/avatars/**",
                                 "/api/ticket/email",
                                 "/api/ticket/confirm",
-                                "/ticket/confirm-page"
+                                "/ticket/confirm-page",
+                                // Kong active health check probes without a token; only health is public
+                                "/actuator/health",
+                                "/actuator/health/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )

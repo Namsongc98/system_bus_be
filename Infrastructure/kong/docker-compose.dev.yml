@@ -1,0 +1,19 @@
+# DEV override: Kong định tuyến tới BE chạy trên máy host (IntelliJ / mvn spring-boot:run).
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --force-recreate
+# Quay lại BE chạy bằng container (Infrastructure/app):
+#   docker compose up -d --force-recreate
+#
+# File này KHÔNG chạy một mình: Compose gộp nó lên docker-compose.yml (file sau đè file trước).
+# Chỉ khai báo phần khác; mọi thứ còn lại (image, ports, env, network) lấy từ docker-compose.yml.
+# Khi dùng chế độ này: tắt container BE (../app) — chạy song song sẽ tranh Redis/Kafka consumer group.
+services:
+  kong:                                # cùng tên service với docker-compose.yml → được gộp, không tạo container mới
+    volumes:
+      # Compose merge volume theo đường dẫn đích → thay mount kong.yml bằng kong.dev.yml
+      # (KONG_DECLARATIVE_CONFIG vẫn là /etc/kong/kong.yml, nhưng nội dung là kong.dev.yml:
+      #  target host.docker.internal:8081/8082 thay vì tên container)
+      - ./kong.dev.yml:/etc/kong/kong.yml:ro
+    extra_hosts:
+      # host.docker.internal = máy Mac/PC nơi IntelliJ chạy BE (nhìn từ trong container Kong).
+      # Docker Desktop (macOS/Windows) có sẵn host.docker.internal; Linux cần dòng này
+      - "host.docker.internal:host-gateway"

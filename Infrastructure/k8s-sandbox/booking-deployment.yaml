@@ -1,31 +1,38 @@
 # Bai tap K8s sandbox - chay tren VM2 (k3s) rieng, KHONG dung Kafka/MySQL/Redis
 # production that. Muc dich: thuc hanh Pod/Deployment/Service/Ingress/probe.
+# Áp dụng: kubectl apply -f booking-deployment.yaml   (trên cluster k3s của VM2)
+# Không liên quan tới các compose trong Infrastructure/ — chỉ dùng chung image do CI build (ci-cd.yml).
+
+# Deployment: giữ đủ số Pod chạy booking; Pod chết thì tạo lại
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: booking-replica
 spec:
-  replicas: 1
+  replicas: 1                            # số Pod mong muốn
   selector:
-    matchLabels: { app: booking-replica }
-  template:
+    matchLabels: { app: booking-replica }  # Deployment quản lý các Pod có nhãn này — phải khớp template.labels
+  template:                              # khuôn tạo Pod
     metadata:
-      labels: { app: booking-replica }
+      labels: { app: booking-replica }   # nhãn Pod — Service bên dưới chọn Pod theo nhãn này
     spec:
       containers:
         - name: booking
-          image: ghcr.io/changeme/ticket-system-booking_ticket:latest
-          ports: [{ containerPort: 8081 }]
-          readinessProbe:
+          image: ghcr.io/changeme/ticket-system-booking_ticket:latest   # image CI push (owner "changeme" là placeholder)
+          ports: [{ containerPort: 8081 }]   # cổng Spring Boot của booking_ticket
+          readinessProbe:                # Pod chỉ nhận traffic khi probe trả 2xx
+            # Ghi chú (B29): Kong dùng /actuator/health/readiness (nhanh, gồm DB/Redis); /actuator/health
+            # đầy đủ gồm cả mail — sandbox không có hạ tầng thật nên probe có thể luôn DOWN.
             httpGet: { path: /actuator/health, port: 8081 }
-            initialDelaySeconds: 15
+            initialDelaySeconds: 15      # chờ Spring khởi động trước khi probe lần đầu
           resources:
-            limits: { memory: "500Mi" }
+            limits: { memory: "500Mi" }  # vượt → Pod bị kill OOM (như mem_limit trong docker-compose.prod.override.yml)
 ---
+# Service: địa chỉ ổn định trong cluster (booking-replica-svc:80) trỏ tới các Pod có nhãn app=booking-replica
 apiVersion: v1
 kind: Service
 metadata:
   name: booking-replica-svc
 spec:
   selector: { app: booking-replica }
-  ports: [{ port: 80, targetPort: 8081 }]
+  ports: [{ port: 80, targetPort: 8081 }]   # gọi Service cổng 80 → Pod cổng 8081

@@ -1,3 +1,8 @@
+# DEV: BE chạy trên máy host (IntelliJ / mvn spring-boot:run), không phải container.
+# Dùng: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --force-recreate
+# Giữ đồng bộ với kong.yml — chỉ khác 2 target (host.docker.internal thay tên container).
+# Không chạy đồng thời BE trong IntelliJ và container BE (chung Redis, Kafka consumer group).
+# docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --force-recreate
 _format_version: "3.0"
 _transform: true
 
@@ -23,9 +28,8 @@ upstreams:
           tcp_failures: 2
           timeouts: 3
     targets:
-      - target: booking-container:8081
+      - target: host.docker.internal:8081
         weight: 100
-      # Thêm instance thứ 2 khi scale: - target: booking-container-2:8081
 
   - name: revenue-upstream
     algorithm: round-robin
@@ -46,9 +50,8 @@ upstreams:
           tcp_failures: 2
           timeouts: 3
     targets:
-      - target: manage-revenue-ticket:8082
+      - target: host.docker.internal:8082
         weight: 100
-      # Thêm instance thứ 2 khi scale: - target: manage-revenue-ticket-2:8082
 
 # ─── Services ─────────────────────────────────────────────────────────────────
 services:

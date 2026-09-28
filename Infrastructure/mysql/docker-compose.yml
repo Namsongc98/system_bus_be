@@ -1,15 +1,26 @@
+# MySQL 8 — DB chính của manage-revenue-ticket (Flyway V1, V2… tạo schema) và booking_ticket.
+# Chạy (1 lần, trước Kafka/Redis/Kong/app): docker compose up -d   (trong thư mục này)
+# Ai kết nối tới đây:
+#   - BE chạy trong container (../app): jdbc:mysql://mysql-ticket-system:3306/quan-ly-ban-hang (qua ticket-system-network)
+#   - BE chạy trong IntelliJ / mvn:     DB_URL=jdbc:mysql://localhost:3306/quan-ly-ban-hang (qua cổng publish 3306)
 services:
   mysql:
-    image: mysql:8.0
-    container_name: mysql-ticket-system
+    image: mysql:8.0                   # cùng bản với Testcontainers trong test (MySQLContainer("mysql:8.0"))
+    container_name: mysql-ticket-system  # = hostname trên mạng Docker; phải khớp SPRING_DATASOURCE_URL trong ../app/docker-compose.yml
     environment:
+      # ⚠ Mật khẩu root hardcode trong file đã commit — chỉ chấp nhận cho DB dev local.
+      #   BE đọc mật khẩu từ DB_PASSWORD (.env), phải trùng giá trị này. Prod: lấy từ biến môi trường (B29).
       MYSQL_ROOT_PASSWORD: 123456789
-      MYSQL_DATABASE: quan-ly-ban-hang
+      MYSQL_DATABASE: quan-ly-ban-hang # DB tạo sẵn khi khởi động lần đầu (volume trống); tên dùng trong mọi DB URL
     ports:
-      - "3306:3306"
+      - "3306:3306"                    # host:container — cho IntelliJ/DBeaver trên máy truy cập localhost:3306
     networks:
-      - ticket-system-network
+      - ticket-system-network          # chung mạng với Kong và container BE (../app) → BE gọi bằng tên mysql-ticket-system
+    # Không khai báo volume có tên: image mysql tự tạo volume ẩn danh cho /var/lib/mysql.
+    # `up -d` / recreate giữ dữ liệu (Compose gắn lại volume cũ); nhưng `down` rồi `up` tạo container
+    # + volume ẩn danh mới → DB trống (volume cũ vẫn còn, không được gắn). Muốn bền: thêm volume có tên.
 
 networks:
   ticket-system-network:
     external: true # Khai báo đây là network bên ngoài, không tự tạo mới
+                   # Tạo 1 lần: docker network create ticket-system-network (dùng chung mysql, kong, app, tls)

@@ -1,7 +1,24 @@
 # Backend Claude Instructions
 
-Use this file for backend tasks in `ticket-system/`. Shared Claude assets live in
-the repository root `.claude/`; do not create a nested project `.claude` folder.
+Use this file for backend tasks in `ticket-system/`. Shared Claude assets
+(skills, agents, hooks, references) live in the `System_bus` repository root
+`.claude/`. Only the minimal `.claude/settings.json` in this repo is allowed;
+do not create other nested `.claude` content here.
+
+## Workspace Layout
+
+The AI workflow expects this layout, with Claude Code started from `System_bus/`:
+
+```
+System_bus/             (AI config repo: CLAUDE.md, .claude/)
+├── ticket-system/      (this repo)
+└── booking_ticket_vue/ (frontend repo)
+```
+
+Started from this repo alone, only this file and `.claude/settings.json` apply:
+the `.env` deny rules still hold, but the shared hooks, skills, and the `../`
+references below are not loaded. If `../.claude/` does not exist, say so instead
+of guessing its rules.
 
 ## Project Scope
 

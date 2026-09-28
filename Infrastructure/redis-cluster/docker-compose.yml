@@ -1,13 +1,30 @@
+# Redis Cluster 6 node (3 master + 3 replica) — cache, session, giữ ghế của 2 service Spring.
+# Chạy: docker compose up -d   (trong thư mục này), rồi tạo cluster 1 lần — xem CLAUDE.md:
+#   docker exec -it redis-1 redis-cli --cluster create 172.30.0.11:7001 … 172.30.0.16:7006 --cluster-replicas 1
+# Ai kết nối tới đây (RedisConfig trong common-library đọc spring.redis.cluster.nodes):
+#   - BE trong container (../app): redis-1:7001…redis-6:7006 qua mạng redis-cluster-net, dùng thẳng IP 172.30.x
+#   - BE trong IntelliJ / mvn:     172.30.0.11:7001… trong application.properties; RedisConfig đổi 172.x → 127.0.0.1
+#                                  (app.redis.map-docker-ips-to-localhost=true) và đi qua cổng publish 7001–7006
 services:
-  redis-node-1:
+  redis-node-1:                          # tên service (dùng trong ../docker-compose.prod.override.yml)
     image: redis:7-alpine
-    container_name: redis-1
-    restart: always
+    container_name: redis-1              # tên container = hostname trên redis-cluster-net (seed node của ../app)
+    restart: always                      # tự chạy lại cả khi đã stop tay rồi Docker khởi động lại
     ports:
-      - "7001:7001"
-      - "17001:17001"
+      - "7001:7001"                      # cổng client — IntelliJ vào qua localhost:7001
+      - "17001:17001"                    # cổng bus cluster (= cổng client + 10000): node ↔ node trao đổi trạng thái
     volumes:
-      - ./data/node-1:/data
+      - ./data/node-1:/data              # dữ liệu runtime (nodes.conf, AOF) — không sửa tay, không commit
+    # Tham số redis-server (comment không đặt được bên trong khối `>` bên dưới):
+    #   --port 7001                      cổng client, khớp `ports`
+    #   --cluster-enabled yes            chạy ở chế độ cluster (chia 16384 slot cho 3 master)
+    #   --cluster-config-file nodes.conf Redis tự ghi sơ đồ cluster vào /data/nodes.conf
+    #   --cluster-node-timeout 5000      5s không phản hồi → coi node chết, replica lên thay
+    #   --appendonly yes                 ghi AOF → dữ liệu còn sau restart
+    #   --bind 0.0.0.0 --protected-mode no  nhận kết nối từ mạng Docker/host, không mật khẩu (chỉ dùng dev)
+    #   --cluster-announce-ip 172.30.0.11   IP node tự giới thiệu cho client khi redirect (MOVED/ASK);
+    #                                       phải = ipv4_address bên dưới
+    #   --cluster-announce-port / -bus-port cổng giới thiệu kèm IP trên
     command: >
       redis-server
       --port 7001
@@ -22,8 +39,9 @@ services:
       --cluster-announce-bus-port 17001
     networks:
       redis-cluster-net:
-        ipv4_address: 172.30.0.11
+        ipv4_address: 172.30.0.11        # IP cố định trong subnet 172.30.0.0/16 — cluster lưu IP, đổi IP là hỏng cluster
 
+  # như redis-node-1 — khác: container redis-2, cổng 7002/17002, IP 172.30.0.12, ./data/node-2
   redis-node-2:
     image: redis:7-alpine
     container_name: redis-2
@@ -49,6 +67,7 @@ services:
       redis-cluster-net:
         ipv4_address: 172.30.0.12
 
+  # như redis-node-1 — khác: container redis-3, cổng 7003/17003, IP 172.30.0.13, ./data/node-3
   redis-node-3:
     image: redis:7-alpine
     container_name: redis-3
@@ -74,6 +93,7 @@ services:
       redis-cluster-net:
         ipv4_address: 172.30.0.13
 
+  # như redis-node-1 — khác: container redis-4, cổng 7004/17004, IP 172.30.0.14, ./data/node-4
   redis-node-4:
     image: redis:7-alpine
     container_name: redis-4
@@ -99,6 +119,7 @@ services:
       redis-cluster-net:
         ipv4_address: 172.30.0.14
 
+  # như redis-node-1 — khác: container redis-5, cổng 7005/17005, IP 172.30.0.15, ./data/node-5
   redis-node-5:
     image: redis:7-alpine
     container_name: redis-5
@@ -124,6 +145,7 @@ services:
       redis-cluster-net:
         ipv4_address: 172.30.0.15
 
+  # như redis-node-1 — khác: container redis-6, cổng 7006/17006, IP 172.30.0.16, ./data/node-6
   redis-node-6:
     image: redis:7-alpine
     container_name: redis-6
@@ -150,9 +172,11 @@ services:
         ipv4_address: 172.30.0.16
 
 networks:
-  redis-cluster-net:
-    name: redis-cluster-net
+  redis-cluster-net:                     # file này TẠO mạng (không external); ../app join với external: true
+    name: redis-cluster-net              # đặt tên cố định, không có tiền tố project (khác kafka_kafka-net)
     driver: bridge
     ipam:
       config:
-        - subnet: 172.30.0.0/16
+        - subnet: 172.30.0.0/16          # chứa 6 IP cố định 172.30.0.11–16; CLAUDE.md dùng cùng subnet
+        # Lưu ý (B29): nếu mạng đã tạo tay bằng `docker network create` (CLAUDE.md), Compose có thể
+        # báo mạng thiếu nhãn project — xoá mạng tạo tay hoặc đổi sang external: true.

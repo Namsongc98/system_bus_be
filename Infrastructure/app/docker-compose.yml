@@ -4,35 +4,38 @@
 # Ca 2 service phai join CA BA network (tach rieng trong setup hien tai):
 # ticket-system-network (MySQL, Kong), redis-cluster-net (Redis cluster),
 # kafka_kafka-net (broker1-3, tao boi ../kafka/docker-compose.yml, project "kafka").
+#
+# Chay: docker compose up -d --build   (Kong phai o che do mac dinh — ../kong/docker-compose.yml, khong kem .dev)
+# Thu tu khoi dong ha tang: mysql → kafka → redis-cluster → kong → app (file nay khong co depends_on — B27).
 services:
   booking-service:
     build:
-      context: ../../
-      dockerfile: booking_ticket/Dockerfile
-    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-changeme}/ticket-system-booking_ticket:latest
-    container_name: booking-container
+      context: ../../                  # = ticket-system/ — Dockerfile COPY duong dan tinh tu day; .dockerignore loai .env, target/
+      dockerfile: booking_ticket/Dockerfile   # multi-stage: build jar trong image, chay user `app`
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-changeme}/ticket-system-booking_ticket:latest  # ten image; CI push len ghcr.io
+    container_name: booking-container  # = hostname tren mang Docker = target cua booking-upstream trong kong.yml
     restart: unless-stopped
     env_file:
-      - ../../.env
-    environment:
-      SPRING_PROFILES_ACTIVE: prod
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-ticket-system:3306/quan-ly-ban-hang
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: broker1:29092,broker2:29092,broker3:29092
+      - ../../.env                     # ticket-system/.env: secret (JWT_SECRET, DB_PASSWORD, MAIL_*, MINIO_*) — khong commit
+    environment:                       # ghi de gia tri trong application.properties cho moi truong container
+      SPRING_PROFILES_ACTIVE: prod     # nap them application-prod.properties (ddl-auto=validate, log...)
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-ticket-system:3306/quan-ly-ban-hang   # mysql-ticket-system = ten container MySQL tren ticket-system-network
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: broker1:29092,broker2:29092,broker3:29092      # listener noi bo 29092 cua broker (localhost:9092.. chi danh cho host)
       # RedisConfig (common-library) đọc spring.redis.cluster.nodes, không phải spring.data.redis.*
       SPRING_REDIS_CLUSTER_NODES: redis-1:7001,redis-2:7002,redis-3:7003,redis-4:7004,redis-5:7005,redis-6:7006
       # Trong container: dùng thẳng IP 172.x mà cluster announce, không đổi sang 127.0.0.1
       APP_REDIS_MAP_DOCKER_IPS_TO_LOCALHOST: "false"
-    networks:
-      - ticket-system-network
-      - redis-cluster-net
-      - kafka-net
+    networks:                          # moi mang cho phep phan giai ten container cua nhom tuong ung
+      - ticket-system-network          # → Kong goi vao duoc; BE goi mysql-ticket-system
+      - redis-cluster-net              # → redis-1..6 va IP 172.30.0.11-16 cluster announce
+      - kafka-net                      # → broker1..3
 
-  manage-revenue-ticket:
+  manage-revenue-ticket:               # giong booking-service; khac: Dockerfile, cong 8082, target revenue-upstream
     build:
       context: ../../
       dockerfile: manage-revenue-ticket/Dockerfile
     image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-changeme}/ticket-system-manage-revenue-ticket:latest
-    container_name: manage-revenue-ticket
+    container_name: manage-revenue-ticket   # = target cua revenue-upstream trong kong.yml (manage-revenue-ticket:8082)
     restart: unless-stopped
     env_file:
       - ../../.env
@@ -49,12 +52,12 @@ services:
       - redis-cluster-net
       - kafka-net
 
-networks:
+networks:                              # ca 3 mang tao san ben ngoai (external) boi cac compose ha tang khac
   ticket-system-network:
-    external: true
+    external: true                     # docker network create ticket-system-network (dung chung mysql, kong)
   redis-cluster-net:
     external: true
-    name: redis-cluster-net
+    name: redis-cluster-net            # subnet 172.30.0.0/16 (../redis-cluster/docker-compose.yml)
   kafka-net:
     external: true
-    name: kafka_kafka-net
+    name: kafka_kafka-net              # ten that do Compose dat: <project "kafka">_<network "kafka-net">

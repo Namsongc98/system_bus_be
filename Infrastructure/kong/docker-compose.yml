@@ -1,29 +1,38 @@
+# Kong API Gateway — điểm vào duy nhất của FE (VITE_KONG_API_URL = http://localhost:8000/api).
+# Luồng: trình duyệt → :8000 (Kong) → route (kong.yml) → upstream → target BE.
+# Chế độ mặc định (file này): BE chạy bằng container (../app/docker-compose.yml), Kong đọc kong.yml.
+# Chế độ dev: thêm -f docker-compose.dev.yml → Kong đọc kong.dev.yml, BE chạy trong IntelliJ.
 services:
   kong:
-    image: kong:3.9
-    container_name: kong-gateway
-    restart: unless-stopped
+    image: kong:3.9                    # Kong 3.9 OSS
+    container_name: kong-gateway       # tên cố định để docker exec/logs; không liên quan target BE
+    restart: unless-stopped            # tự chạy lại khi Docker khởi động, trừ khi đã stop tay
     environment:
-      KONG_DATABASE: "off"
-      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
-      KONG_PROXY_ACCESS_LOG: /dev/stdout
-      KONG_ADMIN_ACCESS_LOG: /dev/stdout
-      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_DATABASE: "off"             # DB-less: không dùng Postgres, toàn bộ cấu hình nằm trong 1 file YAML
+      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml   # file YAML đó — đường dẫn TRONG container, được mount ở `volumes` bên dưới
+      KONG_PROXY_ACCESS_LOG: /dev/stdout            # log request qua proxy → `docker logs kong-gateway`
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout            # log gọi Admin API
+      KONG_PROXY_ERROR_LOG: /dev/stderr             # lỗi proxy/healthcheck (vd "failed to receive status line")
       KONG_ADMIN_ERROR_LOG: /dev/stderr
-      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
-      KONG_PROXY_LISTEN: "0.0.0.0:8000"
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001"             # Admin API lắng nghe trong container; phạm vi truy cập thật do `ports` quyết định
+      KONG_PROXY_LISTEN: "0.0.0.0:8000"             # cổng proxy trong container, khớp `ports` 8000:8000
       KONG_LOG_LEVEL: notice
       # Target là tên container: recreate BE (docker compose up) có thể đổi IP (2 container đổi IP cho nhau).
       # Ép TTL DNS 10s để Kong phân giải lại, không giữ IP cũ → UNHEALTHY/503 dù BE đang UP.
       KONG_DNS_VALID_TTL: "10"
     ports:
-      - "8000:8000"  # HTTP proxy — điểm vào duy nhất cho client
+      - "8000:8000"  # HTTP proxy — điểm vào duy nhất cho client (FE gọi http://localhost:8000/api/...)
       - "127.0.0.1:8001:8001"  # Admin API không xác thực — chỉ bind loopback, máy khác trong LAN không vào được
+                               # Kiểm health upstream: curl 127.0.0.1:8001/upstreams/revenue-upstream/health
     volumes:
+      # Mount file cấu hình route/upstream vào đúng KONG_DECLARATIVE_CONFIG. Sửa kong.yml → phải recreate Kong.
+      # docker-compose.dev.yml mount kong.dev.yml vào CÙNG đường dẫn đích này để thay thế.
       - ./kong.yml:/etc/kong/kong.yml:ro
     networks:
+      # Chung mạng với container BE (../app) và MySQL → Kong phân giải được tên
+      # booking-container / manage-revenue-ticket dùng làm target trong kong.yml.
       - ticket-system-network
-    healthcheck:
+    healthcheck:                       # health của CHÍNH Kong (Docker hiển thị "healthy"), khác health BE (kong.yml → healthchecks)
       test: ["CMD", "kong", "health"]
       interval: 10s
       timeout: 10s
@@ -32,4 +41,4 @@ services:
 
 networks:
   ticket-system-network:
-    external: true
+    external: true                     # tạo sẵn 1 lần: docker network create ticket-system-network (dùng chung với mysql, app)

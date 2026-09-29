@@ -1,6 +1,7 @@
 package com.ticket_system.manage_revenue_ticket.service;
 
 import com.ticket_system.common.Enum.UserRole;
+import com.ticket_system.common.exception.AccountLockedException;
 import com.ticket_system.common.exception.ResourceNotFoundException;
 import com.ticket_system.manage_revenue_ticket.Dto.request.UserRequestDto;
 import com.ticket_system.manage_revenue_ticket.Dto.request.UserUpdatePasswordRequestDto;
@@ -28,6 +29,11 @@ public class AuthService {
     public AuthService(UserRepository userRepository, ProfileRepository profileRepository) {
         this.userRepository = userRepository;
         this.profileRepository = profileRepository;
+    }
+
+    // Shared with UserService so every password is hashed by the same encoder (B16 moves it to a bean).
+    public String encodePassword(String rawPassword) {
+        return passwordEncoder.encode(rawPassword);
     }
 
     public User register(@Valid UserRequestDto user) {
@@ -87,6 +93,10 @@ public class AuthService {
         User checkUser = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         if(passwordEncoder.matches(password, checkUser.getPassword())){
+            // Checked after the password so a caller without it cannot learn the account is locked.
+            if (Boolean.FALSE.equals(checkUser.getIsActive())) {
+                throw new AccountLockedException();
+            }
             return checkUser;
         }else {
             throw new RuntimeException("Invalid email or password");

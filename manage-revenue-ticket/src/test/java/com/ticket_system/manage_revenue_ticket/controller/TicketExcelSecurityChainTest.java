@@ -47,7 +47,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         CustomAuthEntryPoint.class,
         CustomAccessDeniedHandler.class,
         WebConfig.class,
-        AuthInterceptor.class
+        AuthInterceptor.class,
+        AlwaysActiveAccounts.class
 })
 @TestPropertySource(properties = "jwt.secret=01234567890123456789012345678901")
 class TicketExcelSecurityChainTest {

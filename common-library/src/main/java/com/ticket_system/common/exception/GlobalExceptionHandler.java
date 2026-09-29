@@ -162,6 +162,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler  {
         return buildResponseEntity(HttpStatus.CONFLICT, ex.getMessage(), request);
     }
 
+    // 🚫 403: tài khoản bị admin khoá
+    @ExceptionHandler(AccountLockedException.class)
+    public ResponseEntity<Object> handleAccountLocked(AccountLockedException ex, HttpServletRequest request) {
+        return buildResponseEntity(HttpStatus.FORBIDDEN, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<Object> handleResourceNotFound(ResourceNotFoundException ex,HttpServletRequest request) {
      return    buildResponseEntity(HttpStatus.NOT_FOUND, ex.getMessage(), request);

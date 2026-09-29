@@ -1,5 +1,6 @@
 package com.ticket_system.manage_revenue_ticket.controller;
 
+import com.ticket_system.manage_revenue_ticket.interceptor.AccountStatusLookup.AccountState;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ticket_system.common.Enum.UserRole;
 import com.ticket_system.common.exception.GlobalExceptionHandler;
@@ -30,7 +31,7 @@ class SalaryControllerAuthTest {
     private final SalaryService salaryService = mock(SalaryService.class);
     private final MockMvc mockMvc = MockMvcBuilders
             .standaloneSetup(new SalaryController(salaryService))
-            .addInterceptors(new AuthInterceptor(jwtUtil, new ObjectMapper()))
+            .addInterceptors(new AuthInterceptor(jwtUtil, new ObjectMapper(), userId -> AccountState.active(null)))
             .setControllerAdvice(new GlobalExceptionHandler())
             .build();
 

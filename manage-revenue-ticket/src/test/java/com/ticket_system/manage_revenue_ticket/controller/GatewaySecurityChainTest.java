@@ -33,6 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         controllers = GatewaySecurityChainTest.StubController.class,
         excludeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = WebConfig.class))
 @Import({
+        AlwaysActiveAccounts.class,
         GatewaySecurityChainTest.StubController.class,
         SecurityConfig.class,
         JwtAuthFilter.class,

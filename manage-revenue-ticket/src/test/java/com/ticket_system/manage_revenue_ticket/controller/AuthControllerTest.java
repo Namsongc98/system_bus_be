@@ -1,5 +1,6 @@
 package com.ticket_system.manage_revenue_ticket.controller;
 
+import com.ticket_system.manage_revenue_ticket.interceptor.AccountStatusLookup.AccountState;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ticket_system.common.Enum.UserRole;
@@ -30,6 +31,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -50,7 +52,7 @@ class AuthControllerTest {
     private final MockMvc mockMvc = MockMvcBuilders
             .standaloneSetup(new AuthController(
                     new AuthService(userRepository, profileRepository), jwtUtil, mock(RedisTemplate.class)))
-            .addInterceptors(new AuthInterceptor(jwtUtil, mapper))
+            .addInterceptors(new AuthInterceptor(jwtUtil, mapper, userId -> AccountState.active(null)))
             .setControllerAdvice(new GlobalExceptionHandler())
             .build();
 
@@ -189,6 +191,32 @@ class AuthControllerTest {
         mockMvc.perform(get("/api/auth/me")
                         .header("Authorization", bearer(99L, UserRole.CUSTOMER)))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void loginToLockedAccountWithCorrectPasswordIsForbidden() throws Exception {
+        User locked = user(50L, "locked@example.com", "secret123");
+        locked.setIsActive(false);
+        when(userRepository.findByEmail("locked@example.com")).thenReturn(Optional.of(locked));
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType("application/json")
+                        .content("{\"email\":\"locked@example.com\",\"password\":\"secret123\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Tài khoản đã bị khoá"));
+    }
+
+    @Test
+    void loginToLockedAccountWithWrongPasswordDoesNotRevealTheLock() throws Exception {
+        User locked = user(51L, "locked2@example.com", "secret123");
+        locked.setIsActive(false);
+        when(userRepository.findByEmail("locked2@example.com")).thenReturn(Optional.of(locked));
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType("application/json")
+                        .content("{\"email\":\"locked2@example.com\",\"password\":\"wrong-pass\"}"))
+                .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotEqualTo(403))
+                .andExpect(jsonPath("$.message").value("Invalid email or password"));
     }
 
     private User user(Long id, String email, String rawPassword) {

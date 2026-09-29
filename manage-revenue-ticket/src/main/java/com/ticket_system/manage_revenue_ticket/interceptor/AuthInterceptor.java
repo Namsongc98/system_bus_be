@@ -3,8 +3,10 @@ package com.ticket_system.manage_revenue_ticket.interceptor;
 import com.ticket_system.common.Enum.UserRole;
 import com.ticket_system.common.annotation.PublicApi;
 import com.ticket_system.common.annotation.RoleRequired;
+import com.ticket_system.common.exception.AccountLockedException;
 import com.ticket_system.common.exception.UnauthorizedRoleException;
 import com.ticket_system.common.util.JwtUtil;
+import com.ticket_system.manage_revenue_ticket.interceptor.AccountStatusLookup.AccountState;
 import com.ticket_system.common.Dto.response.BaseResponseDto;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,10 +26,12 @@ public class AuthInterceptor implements HandlerInterceptor {
 
   private final JwtUtil jwtUtil;
   private final ObjectMapper mapper;
+  private final AccountStatusLookup accountStatusLookup;
 
-  public AuthInterceptor(JwtUtil jwtUtil, ObjectMapper mapper) {
+  public AuthInterceptor(JwtUtil jwtUtil, ObjectMapper mapper, AccountStatusLookup accountStatusLookup) {
     this.jwtUtil = jwtUtil;
     this.mapper = mapper;
+    this.accountStatusLookup = accountStatusLookup;
   }
 
   @Override
@@ -64,7 +68,18 @@ public class AuthInterceptor implements HandlerInterceptor {
     }
 
     Long userId = jwtUtil.extractUserId(jwtToken);
-    String userRole = jwtUtil.getRoleFromToken(jwtToken);
+    // A token outlives a lock, a role change or a deleted account; the database decides on every request.
+    AccountState account = accountStatusLookup.stateOf(userId);
+    switch (account.status()) {
+      case MISSING -> {
+        return writeUnauthorized(response);
+      }
+      case LOCKED -> {
+        return writeError(response, HttpServletResponse.SC_FORBIDDEN, AccountLockedException.MESSAGE);
+      }
+      case ACTIVE -> { }
+    }
+    String userRole = account.role() != null ? account.role().name() : jwtUtil.getRoleFromToken(jwtToken);
     request.setAttribute("id", userId);
     request.setAttribute("role", userRole);
 
@@ -98,12 +113,14 @@ public class AuthInterceptor implements HandlerInterceptor {
   }
 
   private boolean writeUnauthorized(HttpServletResponse response) throws Exception {
-    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    return writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized - Invalid or missing JWT");
+  }
+
+  private boolean writeError(HttpServletResponse response, int status, String message) throws Exception {
+    response.setStatus(status);
     response.setContentType("application/json");
     response.setCharacterEncoding("UTF-8");
-    response.getWriter().write(mapper.writeValueAsString(
-      BaseResponseDto.error(HttpServletResponse.SC_UNAUTHORIZED,
-        "Unauthorized - Invalid or missing JWT")));
+    response.getWriter().write(mapper.writeValueAsString(BaseResponseDto.error(status, message)));
     return false;
   }
 }

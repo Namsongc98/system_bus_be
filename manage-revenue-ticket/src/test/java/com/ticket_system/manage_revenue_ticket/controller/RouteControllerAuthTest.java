@@ -1,5 +1,6 @@
 package com.ticket_system.manage_revenue_ticket.controller;
 
+import com.ticket_system.manage_revenue_ticket.interceptor.AccountStatusLookup.AccountState;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ticket_system.common.Dto.response.PageResponse;
 import com.ticket_system.common.Enum.UserRole;
@@ -39,7 +40,7 @@ class RouteControllerAuthTest {
     private final RouteService routeService = mock(RouteService.class);
     private final MockMvc mockMvc = MockMvcBuilders
             .standaloneSetup(new RouteController(routeService))
-            .addInterceptors(new AuthInterceptor(jwtUtil, new ObjectMapper()))
+            .addInterceptors(new AuthInterceptor(jwtUtil, new ObjectMapper(), userId -> AccountState.active(null)))
             .setControllerAdvice(new GlobalExceptionHandler())
             .build();
 

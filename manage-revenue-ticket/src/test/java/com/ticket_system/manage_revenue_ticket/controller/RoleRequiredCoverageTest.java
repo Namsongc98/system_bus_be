@@ -28,6 +28,7 @@ class RoleRequiredCoverageTest {
             RouteController.class,
             TripController.class,
             RevenueController.class,
+            UserController.class,
             // L12: locked because AuthInterceptor lets any valid JWT through when no @RoleRequired is set.
             SalaryController.class,
             BaseSalaryController.class,

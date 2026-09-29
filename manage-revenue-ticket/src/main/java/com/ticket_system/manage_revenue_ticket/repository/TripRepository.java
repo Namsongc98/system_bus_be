@@ -21,6 +21,8 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
 
     boolean existsByRouteIdAndStatusIn(Long routeId, Collection<TripStatus> statuses);
 
+    boolean existsByDriverIdAndStatusIn(Long driverId, Collection<TripStatus> statuses);
+
     @Query(value = """
         SELECT\s
             b.id AS busId,\s

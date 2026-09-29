@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Proves the migrations (V1 baseline, V2 unique active seat) build a schema that Hibernate
+ * Proves the migrations (V1 baseline, V2 unique active seat, V3 bus status) build a schema that Hibernate
  * {@code validate} accepts for all 13 entities. The context only starts if Flyway migrated and validation passed.
  * Requires a running Docker daemon.
  */
@@ -48,11 +48,11 @@ class FlywaySchemaValidationTest {
         Integer migrations = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE version IS NOT NULL", Integer.class);
         Integer successful = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM flyway_schema_history WHERE version IN ('1', '2') AND success = 1",
+                "SELECT COUNT(*) FROM flyway_schema_history WHERE version IN ('1', '2', '3') AND success = 1",
                 Integer.class);
 
-        assertThat(migrations).isEqualTo(2);
-        assertThat(successful).isEqualTo(2);
+        assertThat(migrations).isEqualTo(3);
+        assertThat(successful).isEqualTo(3);
     }
 
     @Test

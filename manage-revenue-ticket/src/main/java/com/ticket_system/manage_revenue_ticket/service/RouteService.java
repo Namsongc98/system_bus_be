@@ -1,41 +1,99 @@
 package com.ticket_system.manage_revenue_ticket.service;
 
+import com.ticket_system.common.Dto.response.PageResponse;
+import com.ticket_system.common.exception.ConflictException;
+import com.ticket_system.common.exception.ResourceNotFoundException;
+import com.ticket_system.common.util.PageRequests;
 import com.ticket_system.manage_revenue_ticket.Dto.request.RouteRequestDto;
+import com.ticket_system.manage_revenue_ticket.Dto.response.RouteResponse;
 import com.ticket_system.manage_revenue_ticket.Enum.RouteStatus;
 import com.ticket_system.manage_revenue_ticket.entity.Route;
 import com.ticket_system.manage_revenue_ticket.repository.RouteRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.ticket_system.manage_revenue_ticket.repository.TripRepository;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RouteService {
-    @Autowired
-    private RouteRepository projectRepository;
+
+    private static final String ROUTE_HAS_HISTORY = "Tuyến đã có lịch sử chuyến, hãy chuyển sang INACTIVE";
+
+    private final RouteRepository routeRepository;
+    private final TripRepository tripRepository;
+
+    public RouteService(RouteRepository routeRepository, TripRepository tripRepository) {
+        this.routeRepository = routeRepository;
+        this.tripRepository = tripRepository;
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<RouteResponse> getRoutes(RouteStatus status, int page, int size) {
+        Pageable pageable = PageRequests.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
+        Page<Route> routes = status == null
+                ? routeRepository.findAll(pageable)
+                : routeRepository.findByStatus(status, pageable);
+        return PageResponse.from(routes, RouteResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public RouteResponse getRoute(Long routeId) {
+        return RouteResponse.from(findRoute(routeId));
+    }
 
     // tạo tuyến đường
-    public Route createRoute(RouteRequestDto requestDto){
-        Route route;
-        route = Route.builder()
-                .distanceKm(requestDto.getDistanceKm())
-                .startPoint(requestDto.getStartPoint())
-                .endPoint(requestDto.getEndPoint())
-                .status(RouteStatus.valueOf(requestDto.getStatus().name()))
-                .routeName(requestDto.getRouteName())
-                .build();
-
-       return projectRepository.save(route);
+    @Transactional
+    public RouteResponse createRoute(RouteRequestDto requestDto) {
+        Route route = new Route();
+        apply(route, requestDto);
+        return RouteResponse.from(routeRepository.save(route));
     }
+
     // thay đổi tuyến đường
-    public void updateRoute(Long routeId, RouteRequestDto requestDto){
-        Route route;
-        route = projectRepository.findById(routeId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy xe với id: " + routeId));
-        route.setDistanceKm(requestDto.getDistanceKm());
-        route.setStartPoint(requestDto.getStartPoint());
-        route.setEndPoint(requestDto.getEndPoint());
-        route.setStatus(requestDto.getStatus());
-        route.setRouteName(requestDto.getRouteName());
-         projectRepository.save(route);
+    @Transactional
+    public RouteResponse updateRoute(Long routeId, RouteRequestDto requestDto) {
+        Route route = findRoute(routeId);
+        apply(route, requestDto);
+        return RouteResponse.from(routeRepository.save(route));
     }
 
+    // D2 = A: hard delete only when no trip has ever used the route.
+    @Transactional
+    public void deleteRoute(Long routeId) {
+        Route route = findRoute(routeId);
+        if (tripRepository.existsByRouteIdAndStatusIn(routeId, BusService.UNFINISHED_TRIP_STATUSES)) {
+            throw new ConflictException("Tuyến đang có chuyến chưa kết thúc");
+        }
+        if (tripRepository.existsByRouteId(routeId)) {
+            throw new ConflictException(ROUTE_HAS_HISTORY);
+        }
+        try {
+            routeRepository.delete(route);
+            routeRepository.flush();
+        } catch (DataIntegrityViolationException e) {
+            // A trip was created on this route between the check above and the delete (FK trips_fk_route).
+            throw new ConflictException(ROUTE_HAS_HISTORY);
+        }
+    }
+
+    private Route findRoute(Long routeId) {
+        return routeRepository.findById(routeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tuyến với id: " + routeId));
+    }
+
+    private static void apply(Route route, RouteRequestDto requestDto) {
+        String startPoint = requestDto.getStartPoint().trim();
+        String endPoint = requestDto.getEndPoint().trim();
+        if (startPoint.equalsIgnoreCase(endPoint)) {
+            throw new IllegalArgumentException("Điểm đi và điểm đến phải khác nhau");
+        }
+        route.setRouteName(requestDto.getRouteName().trim());
+        route.setStartPoint(startPoint);
+        route.setEndPoint(endPoint);
+        route.setDistanceKm(requestDto.getDistanceKm());
+        route.setStatus(requestDto.getStatus());
+    }
 }

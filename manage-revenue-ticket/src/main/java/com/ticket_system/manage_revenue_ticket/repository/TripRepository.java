@@ -1,5 +1,6 @@
 package com.ticket_system.manage_revenue_ticket.repository;
 
+import com.ticket_system.manage_revenue_ticket.Enum.TripStatus;
 import com.ticket_system.manage_revenue_ticket.entity.Trip;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -7,10 +8,19 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.time.LocalDateTime;
 
 public interface TripRepository extends JpaRepository<Trip, Long> {
+    boolean existsByBusId(Long busId);
+
+    boolean existsByBusIdAndStatusIn(Long busId, Collection<TripStatus> statuses);
+
+    boolean existsByRouteId(Long routeId);
+
+    boolean existsByRouteIdAndStatusIn(Long routeId, Collection<TripStatus> statuses);
+
     @Query(value = """
         SELECT\s
             b.id AS busId,\s
@@ -29,7 +39,7 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
         JOIN routes r ON t.route_id = r.id
         WHERE r.status = 'ACTIVE'\s
           AND t.status = 'SCHEDULED'
-          AND b.status = 'PENDING'
+          AND b.status = 'AVAILABLE'
    \s""", nativeQuery = true)
     Page<Object[]> findTripBusRouteInfo(Pageable pageable);
 

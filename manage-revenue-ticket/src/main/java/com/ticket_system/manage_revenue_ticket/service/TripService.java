@@ -15,7 +15,6 @@ import com.ticket_system.manage_revenue_ticket.repository.BusesRepository;
 import com.ticket_system.manage_revenue_ticket.repository.RouteRepository;
 import com.ticket_system.manage_revenue_ticket.repository.TripRepository;
 import com.ticket_system.manage_revenue_ticket.repository.UserRepository;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -34,20 +33,20 @@ import java.util.stream.Collectors;
 @Service
 public class TripService {
 
-  @Autowired
-  private TripRepository tripRepository;
-  @Autowired
-  private RouteRepository routeRepository;
-  @Autowired
-  private BusesRepository busRepository;
-  @Autowired
-  private UserRepository userRepository;
-
-
+  private final TripRepository tripRepository;
+  private final RouteRepository routeRepository;
+  private final BusesRepository busRepository;
+  private final UserRepository userRepository;
   private final JdbcTemplate jdbcTemplate;
   private final SimpleJdbcCall simpleJdbcCall;
 
-  public TripService(JdbcTemplate jdbcTemplate) {
+  public TripService(TripRepository tripRepository, RouteRepository routeRepository,
+                     BusesRepository busRepository, UserRepository userRepository,
+                     JdbcTemplate jdbcTemplate) {
+    this.tripRepository = tripRepository;
+    this.routeRepository = routeRepository;
+    this.busRepository = busRepository;
+    this.userRepository = userRepository;
     this.jdbcTemplate = jdbcTemplate;
     this.simpleJdbcCall = new SimpleJdbcCall(jdbcTemplate)
       .withProcedureName("revenue_trips")
@@ -111,10 +110,10 @@ public class TripService {
     if (driver.getDriverStatus() == DriverStatus.INACTIVE) {
       throw new IllegalArgumentException("Tài xế số" + driver.getId() + " không hoạt động.");
     }
-    if (bus.getStatus() == BusStatus.INACTIVE) {
+    if (bus.getStatus() == BusStatus.MAINTENANCE) {
       throw new IllegalArgumentException("Bus có biển " + bus.getPlateNumber() + " đang gặp vấn đề không thể chạy.");
     }
-    if (bus.getStatus() == BusStatus.ACTIVE) {
+    if (bus.getStatus() == BusStatus.IN_USE) {
       throw new IllegalArgumentException("Bus có biển " + bus.getPlateNumber() + " đang chạy chuyển khác.");
     }
     Trip trip = Trip.builder()
@@ -128,7 +127,7 @@ public class TripService {
       .build();
 
     Trip savedTrip = tripRepository.save(trip);
-    bus.setStatus(BusStatus.ACTIVE);
+    bus.setStatus(BusStatus.IN_USE);
     busRepository.save(bus);
     driver.setDriverStatus(DriverStatus.ACTIVE);
     userRepository.save(driver);
@@ -149,14 +148,14 @@ public class TripService {
     if (requestDto.getBusId() != null) {
       bus = busRepository.findById(requestDto.getBusId())
         .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy xe có ID: " + requestDto.getBusId()));
-      if (bus.getStatus() == BusStatus.INACTIVE) {
+      if (bus.getStatus() == BusStatus.MAINTENANCE) {
         throw new IllegalArgumentException("Bus có biển " + bus.getPlateNumber() + " đang gặp vấn đề không thể chạy.");
       }
-      if (bus.getStatus() == BusStatus.ACTIVE) {
+      if (bus.getStatus() == BusStatus.IN_USE) {
         throw new IllegalArgumentException("Bus có biển " + bus.getPlateNumber() + " đang chạy chuyển khác.");
       }
       trip.setBus(bus);
-      bus.setStatus(BusStatus.ACTIVE);
+      bus.setStatus(BusStatus.IN_USE);
       busRepository.save(bus);
     }
     User driver;

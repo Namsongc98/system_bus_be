@@ -2,6 +2,7 @@ package com.ticket_system.common.util;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 
 /**
  * Builds the Pageable for list endpoints from the {@code page} and {@code size}
@@ -17,12 +18,16 @@ public final class PageRequests {
     }
 
     public static Pageable of(int page, int size) {
+        return of(page, size, Sort.unsorted());
+    }
+
+    public static Pageable of(int page, int size, Sort sort) {
         if (page < 0) {
             throw new IllegalArgumentException("page must be >= 0");
         }
         if (size < 1 || size > MAX_SIZE) {
             throw new IllegalArgumentException("size must be between 1 and " + MAX_SIZE);
         }
-        return PageRequest.of(page, size);
+        return PageRequest.of(page, size, sort);
     }
 }

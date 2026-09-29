@@ -28,8 +28,9 @@ public class Buses extends BaseEntity {
     @Column(name = "capacity", nullable = false)
     private Integer capacity;
 
+    @Builder.Default
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, columnDefinition = "ENUM('ACTIVE','INACTIVE','PENDING') DEFAULT 'ACTIVE'")
-    private BusStatus status = BusStatus.PENDING;
+    @Column(name = "status", nullable = false, columnDefinition = "ENUM('AVAILABLE','IN_USE','MAINTENANCE') DEFAULT 'AVAILABLE'")
+    private BusStatus status = BusStatus.AVAILABLE;
 
 }

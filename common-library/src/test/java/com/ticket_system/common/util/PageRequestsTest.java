@@ -2,6 +2,7 @@ package com.ticket_system.common.util;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -14,6 +15,16 @@ class PageRequestsTest {
 
         assertThat(pageable.getPageNumber()).isEqualTo(3);
         assertThat(pageable.getPageSize()).isEqualTo(20);
+    }
+
+    @Test
+    void keepsSortAndStillValidates() {
+        Sort byIdDesc = Sort.by(Sort.Direction.DESC, "id");
+
+        assertThat(PageRequests.of(1, 12, byIdDesc).getSort()).isEqualTo(byIdDesc);
+        assertThat(PageRequests.of(1, 12).getSort().isUnsorted()).isTrue();
+        assertThatThrownBy(() -> PageRequests.of(0, 0, byIdDesc))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

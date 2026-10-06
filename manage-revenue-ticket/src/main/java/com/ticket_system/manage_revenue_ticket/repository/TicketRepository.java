@@ -1,16 +1,21 @@
 package com.ticket_system.manage_revenue_ticket.repository;
 
+import com.ticket_system.manage_revenue_ticket.Enum.TicketStatus;
 import com.ticket_system.manage_revenue_ticket.entity.Ticket;
 import com.ticket_system.manage_revenue_ticket.projection.DashboardLoyalCustomerProjection;
 import com.ticket_system.manage_revenue_ticket.projection.DashboardRecentBookingProjection;
 import com.ticket_system.manage_revenue_ticket.projection.DashboardTopRouteProjection;
+import com.ticket_system.manage_revenue_ticket.projection.TripTicketStatsProjection;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.Optional;
 import java.util.List;
 import java.util.Map;
 
@@ -23,6 +28,64 @@ public interface TicketRepository extends JpaRepository<Ticket, Long> {
       AND status_ticket <> 'CANCELLED'
 """, nativeQuery = true)
     long countActiveTicketsByTripId(@Param("tripId") Long tripId);
+
+    // Vé chưa huỷ + doanh thu vé SUCCESS của nhiều chuyến trong 1 query (TripResponse, spec 1.3 S1/D6).
+    @Query(value = """
+    SELECT trip_id AS tripId,
+           COUNT(*) AS ticketCount,
+           SUM(CASE WHEN status_ticket <> 'CANCELLED' THEN 1 ELSE 0 END) AS bookedSeats,
+           COALESCE(SUM(CASE WHEN status_ticket = 'SUCCESS' THEN price ELSE 0 END), 0) AS revenue
+    FROM tickets
+    WHERE trip_id IN (:tripIds)
+    GROUP BY trip_id
+""", nativeQuery = true)
+    List<TripTicketStatsProjection> findTripTicketStats(@Param("tripIds") Collection<Long> tripIds);
+
+    boolean existsByTripId(Long tripId);
+
+    // Trip of a ticket without loading the ticket entity — updateTicket locks that trip first.
+    @Query("select t.trip.id from Ticket t where t.id = :ticketId")
+    Optional<Long> findTripIdById(@Param("ticketId") Long ticketId);
+
+    // Highest seat still held on a trip: a smaller bus must still have that seat (spec 1.3 S4).
+    @Query(value = "SELECT MAX(seat_number) FROM tickets WHERE trip_id = :tripId AND status_ticket <> 'CANCELLED'",
+            nativeQuery = true)
+    Integer findMaxActiveSeatNumberByTripId(@Param("tripId") Long tripId);
+
+    // Smallest capacity a bus may shrink to: the highest seat number / active ticket count held on any of
+    // its unfinished trips (B36 b). 0 when nothing is sold. seat_number is nullable (V1) and GREATEST(NULL, n)
+    // is NULL in MySQL, so a trip whose tickets have no seat number still counts by its ticket count (L23).
+    @Query(value = """
+            SELECT COALESCE(MAX(GREATEST(x.max_seat, x.sold)), 0) FROM (
+                SELECT COALESCE(MAX(tk.seat_number), 0) AS max_seat, COUNT(*) AS sold
+                FROM tickets tk JOIN trips tr ON tr.id = tk.trip_id
+                WHERE tr.bus_id = :busId AND tr.status IN ('SCHEDULED', 'ONGOING')
+                  AND tk.status_ticket <> 'CANCELLED'
+                GROUP BY tk.trip_id
+            ) x
+            """, nativeQuery = true)
+    int findRequiredCapacityForBus(@Param("busId") Long busId);
+
+    boolean existsByCustomerIdAndStatusTicketNot(Long customerId, TicketStatus status);
+
+    // Khách của các vé chưa huỷ — trả trạng thái khách khi huỷ cả chuyến (giống cancelTicket).
+    @Query("""
+            select distinct t.customer.id from Ticket t
+            where t.trip.id = :tripId
+              and t.statusTicket <> com.ticket_system.manage_revenue_ticket.Enum.TicketStatus.CANCELLED
+              and t.customer is not null
+            """)
+    List<Long> findActiveCustomerIdsByTripId(@Param("tripId") Long tripId);
+
+    // Huỷ chuyến → huỷ mọi vé chưa huỷ (spec 1.3 D3 = A). Trả số vé đã huỷ. Không clear persistence
+    // context: chuyến đang sửa trong cùng transaction phải còn managed; không ai giữ entity Ticket ở đây.
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            update Ticket t set t.statusTicket = com.ticket_system.manage_revenue_ticket.Enum.TicketStatus.CANCELLED
+            where t.trip.id = :tripId
+              and t.statusTicket <> com.ticket_system.manage_revenue_ticket.Enum.TicketStatus.CANCELLED
+            """)
+    int cancelActiveTicketsByTripId(@Param("tripId") Long tripId);
 
     // Ghế đang có vé chưa huỷ (bỏ qua vé excludeTicketId khi sửa vé; null khi tạo).
     @Query(value = """

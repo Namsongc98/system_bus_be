@@ -33,7 +33,7 @@ public class LoyaltyPointsService {
     // ✏️ UPDATE - cập nhật giao dịch điểm (ví dụ chỉnh sửa mô tả hoặc điểm)
     public LoyaltyPoint update(Long id, LoyaltyPointsRequest request) {
         LoyaltyPoint existing = loyaltyPointRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy lịch sử điểm có id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy lịch sử điểm có id: " + id));
         User customer = userRepository.findById(request.getCustomerId())
                 .orElseThrow(()->new ResourceNotFoundException("Không thấy người dùng này"));
 

@@ -15,6 +15,7 @@ import jakarta.persistence.PersistenceContext;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -54,11 +55,10 @@ public class TicketService {
     @Transactional
     public Ticket createTicket(TicketRequestDto responseDto){
         // tách các service thay vì truy cập vào repository
-        Trip trip =  tripRepository.findById(responseDto.getTripId())
+        // Trip row lock: a concurrent cancel / start of the trip waits (spec 1.3, TripService).
+        Trip trip =  tripRepository.findByIdForUpdate(responseDto.getTripId())
                 .orElseThrow(()->new ResourceNotFoundException("Không tìm thấy chuyến xe " + responseDto.getTripId()));
-        if(trip.getStatus() == TripStatus.ONGOING){
-            throw new IllegalArgumentException("Chuyến xe này đang trong chuyến!");
-        };
+        assertTripOpenForBooking(trip);
         User customer = userRepository.findById(responseDto.getCustomerId())
                 .orElseThrow(()->new ResourceNotFoundException("Không thấy người dùng này"));
 
@@ -111,18 +111,20 @@ public class TicketService {
         return savedTicket;
     };
     // update vé
-    @Transactional
+    // Lead review 1.3 L13: khoá row chuyến của vé TRƯỚC khi đọc vé (READ_COMMITTED) — nếu đọc vé trước,
+    // một lần huỷ chuyến đang chạy sẽ bị ghi đè bằng bản vé PENDING cũ.
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public Ticket updateTicket(Long ticketId, TicketRequestDto responseDto){
 
-        Ticket ticket;
-        ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(()->new ResourceNotFoundException("Không tìm thấy vé xe " + responseDto.getTripId()));
+        Long ticketTripId = ticketRepository.findTripIdById(ticketId)
+                .orElseThrow(()->new ResourceNotFoundException("Không tìm thấy vé xe " + ticketId));
+        // Ghế/giá chỉ sửa được khi chuyến của chính vé còn mở bán (spec 1.3 S10).
+        assertTripOpenForBooking(tripRepository.findByIdForUpdate(ticketTripId)
+                .orElseThrow(()->new ResourceNotFoundException("Không tìm thấy chuyến xe " + ticketTripId)));
+        Ticket ticket = lockedTicketOn(ticketTripId, ticketId);
 
-        Trip trip =  tripRepository.findById(responseDto.getTripId())
+        tripRepository.findById(responseDto.getTripId())
                 .orElseThrow(()->new ResourceNotFoundException("Không tìm thấy chuyến xe " + responseDto.getTripId()));
-        if(trip.getStatus() == TripStatus.ONGOING){
-            throw new IllegalArgumentException("Chuyến xe này đang trong chuyến!");
-        };
         User customer = userRepository.findById(responseDto.getCustomerId())
                 .orElseThrow(()->new ResourceNotFoundException("Không thấy người dùng này"));
 
@@ -152,11 +154,10 @@ public class TicketService {
     }
     @Transactional
     public Ticket createTicketByLoyalty(TicketRequestDto responseDto, Long idReward){
-        Trip trip =  tripRepository.findById(responseDto.getTripId())
+        // Trip row lock: a concurrent cancel / start of the trip waits (spec 1.3, TripService).
+        Trip trip =  tripRepository.findByIdForUpdate(responseDto.getTripId())
                 .orElseThrow(()->new ResourceNotFoundException("Không tìm thấy chuyến xe " + responseDto.getTripId()));
-        if(trip.getStatus() == TripStatus.ONGOING){
-            throw new IllegalArgumentException("Chuyến xe này đang trong chuyến!");
-        };
+        assertTripOpenForBooking(trip);
         User customer = userRepository.findById(responseDto.getCustomerId())
                 .orElseThrow(()->new ResourceNotFoundException("Không thấy người dùng này"));
 
@@ -171,12 +172,12 @@ public class TicketService {
         LoyaltyReward reward = loyaltyRewardRepository.findById(idReward)
                 .orElseThrow(()->new ResourceNotFoundException("Không thấy ưu đãi này"));
          if(reward.getStatus() == LoyaltyReward.Status.INACTIVE){
-             throw  new RuntimeException("Phần thưởng không còn hoạt động");
+             throw new ConflictException("Phần thưởng không còn hoạt động");
          }
         LoyaltyPoint loyaltyPoint = loyaltyPointRepository.findAllByCustomerIdOrderByUpdatedAtDesc(customer.getId())
                 .stream()
                 .findFirst()
-                .orElseThrow(() -> new RuntimeException("bạn chưa có điểm nào"));
+                .orElseThrow(() -> new ConflictException("Bạn chưa có điểm nào"));
 // Lấy LoyaltyPoint thực tế
 
 // Lấy tổng điểm hiện có của khách hàng
@@ -184,7 +185,7 @@ public class TicketService {
 
 // So sánh
         if (totalPointCustomer < reward.getPointsRequired()) {
-            throw new RuntimeException("Bạn không đủ điểm để đổi phần thưởng này.");
+            throw new ConflictException("Bạn không đủ điểm để đổi phần thưởng này.");
         }else {
             int currentPoint = totalPointCustomer - reward.getPointsRequired();
             LoyaltyPoint newLoyaltyPoints = new LoyaltyPoint();
@@ -213,6 +214,13 @@ public class TicketService {
         customer.setUserStatus(CustomerStatus.BOOKED);
         userRepository.save(customer);
         return ticket;
+    }
+
+    // Chỉ chuyến SCHEDULED nhận đặt / sửa vé: chuyến đã chạy, xong hoặc bị huỷ thì không (spec 1.3 S10).
+    private static void assertTripOpenForBooking(Trip trip) {
+        if(trip.getStatus() != TripStatus.SCHEDULED){
+            throw new ConflictException("Chuyến xe không còn nhận đặt vé (trạng thái " + trip.getStatus() + ")");
+        }
     }
 
     // Tạo vé mới: số ghế hợp lệ, chuyến còn chỗ, ghế chưa có người (spec review 0.8: D2, D3).
@@ -258,23 +266,39 @@ public class TicketService {
         }
     }
 
-    // hủy vé
-    public Ticket cancelTicket(Long ticketId){
+    // Vé đọc SAU khi đã khoá row chuyến của nó. Vé đã huỷ → 409 (sửa hay huỷ lại đều vậy). Chuyến của vé
+    // không đổi được qua API; nếu khác chuyến vừa khoá thì từ chối để người gọi thử lại (lead review 1.3 L22).
+    private Ticket lockedTicketOn(Long lockedTripId, Long ticketId) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(()->new ResourceNotFoundException("Không tìm thấy vé xe " + ticketId));
-
-        if(ticket.getStatusTicket() == TicketStatus.CANCELLED){
-            throw new IllegalArgumentException("Vé này đã bị hủy trước đó");
+        if(!lockedTripId.equals(ticket.getTrip().getId())){
+            throw new ConflictException("Vé " + ticketId + " vừa thay đổi, vui lòng thử lại");
         }
+        if(ticket.getStatusTicket() == TicketStatus.CANCELLED){
+            throw new ConflictException("Vé " + ticketId + " đã bị huỷ");
+        }
+        return ticket;
+    }
+
+    // hủy vé — cùng thứ tự khoá với updateTicket / TripService: khoá row chuyến rồi mới đọc vé (lead review 1.3 L20).
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Ticket cancelTicket(Long ticketId){
+        Long ticketTripId = ticketRepository.findTripIdById(ticketId)
+                .orElseThrow(()->new ResourceNotFoundException("Không tìm thấy vé xe " + ticketId));
+        tripRepository.findByIdForUpdate(ticketTripId)
+                .orElseThrow(()->new ResourceNotFoundException("Không tìm thấy chuyến xe " + ticketTripId));
+        Ticket ticket = lockedTicketOn(ticketTripId, ticketId);
 
         ticket.setStatusTicket(TicketStatus.CANCELLED);
-        ticketRepository.save(ticket);
+        ticketRepository.saveAndFlush(ticket);
 
-        // Cập nhật trạng thái khách hàng
+        // Khách chỉ về NOT_BOOKED khi không còn vé chưa huỷ nào khác (như TripService.cancelTickets).
         User customer = ticket.getCustomer();
-        customer.setUserStatus(CustomerStatus.NOT_BOOKED);
-        userRepository.save(customer);
-
+        if(customer != null
+                && !ticketRepository.existsByCustomerIdAndStatusTicketNot(customer.getId(), TicketStatus.CANCELLED)){
+            customer.setUserStatus(CustomerStatus.NOT_BOOKED);
+            userRepository.save(customer);
+        }
         return ticket;
     }
 }

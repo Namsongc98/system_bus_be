@@ -34,6 +34,8 @@ class RoleRequiredCoverageTest {
             BaseSalaryController.class,
             BaseLoyaltyPointsController.class,
             LoyaltyRewardController.class,
+            // B20 (lead review 1.3 L17): ADMIN-only until task 4.3 decides the customer flow.
+            LoyaltyPointsController.class,
             RedisTestController.class
     })
     void everyHandlerRequiresAdmin(Class<?> controller) {
@@ -53,23 +55,21 @@ class RoleRequiredCoverageTest {
         }
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {
-            "addTicket",
-            "updateTicket",
-            "getTicketSummaryByBusAndTime",
-            "exportTicketSummaryToExcel"
-    })
-    void ticketAdminEndpointsRequireAdmin(String methodName) {
-        Method handler = handlerMethods(TicketController.class).stream()
-                .filter(method -> method.getName().equals(methodName))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("No handler named " + methodName));
+    @Test
+    void everyNonPublicTicketEndpointRequiresAdmin() {
+        // Listed dynamically (B20): a new handler without @PublicApi must be ADMIN-only too.
+        List<Method> handlers = handlerMethods(TicketController.class).stream()
+                .filter(method -> AnnotatedElementUtils.findMergedAnnotation(method, PublicApi.class) == null)
+                .toList();
+        assertThat(handlers).extracting(Method::getName).contains("addTicket", "createTicketByLoyalty");
 
-        RoleRequired effective = effectiveRoleRequired(TicketController.class, handler);
-
-        assertThat(effective).isNotNull();
-        assertThat(effective.value()).containsExactly(UserRole.ADMIN);
+        for (Method handler : handlers) {
+            RoleRequired effective = effectiveRoleRequired(TicketController.class, handler);
+            assertThat(effective).as("TicketController.%s has no @RoleRequired", handler.getName()).isNotNull();
+            assertThat(effective.value())
+                    .as("TicketController.%s must be ADMIN-only", handler.getName())
+                    .containsExactly(UserRole.ADMIN);
+        }
     }
 
     @Test

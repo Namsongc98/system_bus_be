@@ -10,6 +10,9 @@ import java.time.LocalDate;
 import java.util.List;
 
 public interface RevenueRepository extends JpaRepository<Revenue,Long> {
+
+    boolean existsByTripId(Long tripId);
+
     // Doanh thu của 1 bus theo ngày
     @Query("""
         SELECT SUM(r.totalAmount)

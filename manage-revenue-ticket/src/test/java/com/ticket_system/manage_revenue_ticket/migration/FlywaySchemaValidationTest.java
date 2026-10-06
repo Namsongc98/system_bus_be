@@ -48,11 +48,23 @@ class FlywaySchemaValidationTest {
         Integer migrations = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE version IS NOT NULL", Integer.class);
         Integer successful = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM flyway_schema_history WHERE version IN ('1', '2', '3') AND success = 1",
+                "SELECT COUNT(*) FROM flyway_schema_history WHERE version IN ('1', '2', '3', '4') AND success = 1",
                 Integer.class);
 
-        assertThat(migrations).isEqualTo(3);
-        assertThat(successful).isEqualTo(3);
+        assertThat(migrations).isEqualTo(4);
+        assertThat(successful).isEqualTo(4);
+    }
+
+    @Test
+    void tripSearchIndexesExist() {
+        // V4 (B35 b): GET /api/trip filters/sorts on departure_time; overlap checks look up bus / driver.
+        List<String> indexes = jdbc.queryForList("""
+                SELECT DISTINCT index_name FROM information_schema.statistics
+                WHERE table_schema = DATABASE() AND table_name = 'trips'
+                """, String.class);
+
+        assertThat(indexes).contains("idx_trips_departure", "idx_trips_status_departure",
+                "idx_trips_bus_departure", "idx_trips_driver_departure");
     }
 
     @Test

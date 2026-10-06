@@ -215,8 +215,20 @@ class AuthControllerTest {
         mockMvc.perform(post("/api/auth/login")
                         .contentType("application/json")
                         .content("{\"email\":\"locked2@example.com\",\"password\":\"wrong-pass\"}"))
-                .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotEqualTo(403))
-                .andExpect(jsonPath("$.message").value("Invalid email or password"));
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Email hoặc mật khẩu không đúng"));
+    }
+
+    @Test
+    void loginWithUnknownEmailLooksLikeAWrongPassword() throws Exception {
+        // B26: same 401 and message as a wrong password, so registered emails cannot be probed.
+        when(userRepository.findByEmail("nobody@example.com")).thenReturn(Optional.empty());
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType("application/json")
+                        .content("{\"email\":\"nobody@example.com\",\"password\":\"whatever1\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Email hoặc mật khẩu không đúng"));
     }
 
     private User user(Long id, String email, String rawPassword) {

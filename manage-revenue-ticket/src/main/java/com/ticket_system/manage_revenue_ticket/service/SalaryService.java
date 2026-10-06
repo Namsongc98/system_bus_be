@@ -1,5 +1,7 @@
 package com.ticket_system.manage_revenue_ticket.service;
 
+import com.ticket_system.common.exception.ConflictException;
+import com.ticket_system.common.exception.ResourceNotFoundException;
 import com.ticket_system.manage_revenue_ticket.entity.BaseSalary;
 import com.ticket_system.manage_revenue_ticket.entity.Salary;
 import com.ticket_system.manage_revenue_ticket.entity.User;
@@ -45,7 +47,7 @@ public class SalaryService {
         for (Object[] row : driverTrips) {
             Long driverId = ((Number) row[0]).longValue();
             User user = userRepository.findById(driverId)
-                    .orElseThrow(() -> new RuntimeException("Driver not found with id: " + driverId));
+                    .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tài xế với mã: " + driverId));
             Long totalTrips = ((Number) row[1]).longValue();
 
             // 1️⃣ Lấy base salary từ base_salaries
@@ -83,11 +85,11 @@ public class SalaryService {
     public Salary generateMonthlySalariesRoleUser(byte month, short year, Long userId){
 
         User user = userRepository.findById(userId)
-                .orElseThrow(()-> new RuntimeException("Không tìm thấy người dùng với mã: " + userId));
+                .orElseThrow(()-> new ResourceNotFoundException("Không tìm thấy người dùng với mã: " + userId));
         List<BaseSalary> salaryRepo = baseSalaryRepository.findLatestByUserId(user.getId());
         List<Salary> salaries =  salaryRepository.findByPeriodMonthAndPeriodYearAndUserId( month, year, user.getId());
         if(!salaries.isEmpty()){
-            throw new RuntimeException("Đã tính lương cho "+ user.getEmail() +" này");
+            throw new ConflictException("Đã tính lương cho "+ user.getEmail() +" này");
         }
         BigDecimal commissionTotal =  new BigDecimal("0.00");
         BigDecimal commission = salaryRepo.getFirst().getCommission();

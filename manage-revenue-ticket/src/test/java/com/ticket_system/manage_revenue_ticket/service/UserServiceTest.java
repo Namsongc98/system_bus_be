@@ -12,6 +12,7 @@ import com.ticket_system.manage_revenue_ticket.Enum.DriverStatus;
 import com.ticket_system.manage_revenue_ticket.entity.Profile;
 import com.ticket_system.manage_revenue_ticket.entity.User;
 import com.ticket_system.manage_revenue_ticket.projection.RoleCountProjection;
+import com.ticket_system.manage_revenue_ticket.projection.UserAuthStateProjection;
 import com.ticket_system.manage_revenue_ticket.repository.ProfileRepository;
 import com.ticket_system.manage_revenue_ticket.repository.TripRepository;
 import com.ticket_system.manage_revenue_ticket.repository.UserRepository;
@@ -98,7 +99,7 @@ class UserServiceTest {
 
     @Test
     void getUnknownUserIsNotFound() {
-        when(userRepository.findById(9L)).thenReturn(Optional.empty());
+        stubMissing(9L);
 
         assertThatThrownBy(() -> userService.getUser(9L)).isInstanceOf(ResourceNotFoundException.class);
     }
@@ -107,7 +108,7 @@ class UserServiceTest {
     void responseNeverCarriesPasswordAndTreatsNullActiveAsActive() {
         User user = user(5L, UserRole.CUSTOMER, true);
         user.setIsActive(null);
-        when(userRepository.findById(5L)).thenReturn(Optional.of(user));
+        stubUser(user);
         when(profileRepository.findByUserId(5L)).thenReturn(Optional.empty());
 
         UserResponse response = userService.getUser(5L);
@@ -195,7 +196,7 @@ class UserServiceTest {
     @Test
     void updateCreatesProfileForUserWithoutOne() {
         User customer = user(30L, UserRole.CUSTOMER, true);
-        when(userRepository.findById(30L)).thenReturn(Optional.of(customer));
+        stubUser(customer);
         when(profileRepository.findByUserId(30L)).thenReturn(Optional.empty());
         when(profileRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -213,7 +214,7 @@ class UserServiceTest {
     @Test
     void updateToDriverSetsPendingDriverStatus() {
         User collector = user(31L, UserRole.COLLECTOR, true);
-        when(userRepository.findById(31L)).thenReturn(Optional.of(collector));
+        stubUser(collector);
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(profileRepository.findByUserId(31L)).thenReturn(Optional.of(profile(collector, "Cũ", null)));
         when(profileRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -228,7 +229,7 @@ class UserServiceTest {
     @Test
     void updateKeepingAnUnassignableRoleIsAllowed() {
         User admin = user(32L, UserRole.ADMIN, true);
-        when(userRepository.findById(32L)).thenReturn(Optional.of(admin));
+        stubUser(admin);
         when(profileRepository.findByUserId(32L)).thenReturn(Optional.empty());
         when(profileRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -239,7 +240,7 @@ class UserServiceTest {
 
     @Test
     void updatePromotingToAdminIsRejected() {
-        when(userRepository.findById(33L)).thenReturn(Optional.of(user(33L, UserRole.CUSTOMER, true)));
+        stubUser(user(33L, UserRole.CUSTOMER, true));
 
         assertThatThrownBy(() -> userService.update(33L, updateRequest("X", null, UserRole.ADMIN), CALLER))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -247,7 +248,7 @@ class UserServiceTest {
 
     @Test
     void updateOwnRoleIsConflict() {
-        when(userRepository.findById(CALLER)).thenReturn(Optional.of(user(CALLER, UserRole.ADMIN, true)));
+        stubUser(user(CALLER, UserRole.ADMIN, true));
 
         assertThatThrownBy(() -> userService.update(CALLER, updateRequest("Me", null, UserRole.CUSTOMER), CALLER))
                 .isInstanceOf(ConflictException.class);
@@ -255,7 +256,7 @@ class UserServiceTest {
 
     @Test
     void demotingLastActiveAdminIsConflict() {
-        when(userRepository.findById(34L)).thenReturn(Optional.of(user(34L, UserRole.ADMIN, true)));
+        stubUser(user(34L, UserRole.ADMIN, true));
         when(userRepository.lockActiveAdmins()).thenReturn(activeAdmins(1));
 
         assertThatThrownBy(() -> userService.update(34L, updateRequest("A", null, UserRole.CUSTOMER), CALLER))
@@ -265,7 +266,7 @@ class UserServiceTest {
     @Test
     void demotingAnAdminWhenAnotherIsActiveIsAllowed() {
         User admin = user(35L, UserRole.ADMIN, true);
-        when(userRepository.findById(35L)).thenReturn(Optional.of(admin));
+        stubUser(admin);
         when(userRepository.lockActiveAdmins()).thenReturn(activeAdmins(2));
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(profileRepository.findByUserId(35L)).thenReturn(Optional.empty());
@@ -277,7 +278,7 @@ class UserServiceTest {
 
     @Test
     void changingRoleOfDriverWithUnfinishedTripIsConflict() {
-        when(userRepository.findById(36L)).thenReturn(Optional.of(user(36L, UserRole.DRIVER, true)));
+        stubUser(user(36L, UserRole.DRIVER, true));
         when(tripRepository.existsByDriverIdAndStatusIn(eq(36L), any())).thenReturn(true);
 
         assertThatThrownBy(() -> userService.update(36L, updateRequest("D", null, UserRole.COLLECTOR), CALLER))
@@ -286,7 +287,7 @@ class UserServiceTest {
 
     @Test
     void updateUnknownUserIsNotFound() {
-        when(userRepository.findById(anyLong())).thenReturn(Optional.empty());
+        stubMissing(anyLong());
 
         assertThatThrownBy(() -> userService.update(99L, updateRequest("X", null, UserRole.CUSTOMER), CALLER))
                 .isInstanceOf(ResourceNotFoundException.class);
@@ -297,7 +298,7 @@ class UserServiceTest {
     @Test
     void lockAndUnlock() {
         User customer = user(40L, UserRole.CUSTOMER, true);
-        when(userRepository.findById(40L)).thenReturn(Optional.of(customer));
+        stubUser(customer);
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         assertThat(userService.setActive(40L, false, CALLER).active()).isFalse();
@@ -308,7 +309,7 @@ class UserServiceTest {
     @Test
     void settingTheCurrentStateIsIdempotentAndSkipsGuards() {
         // Already locked: locking again must not fail even though it is the caller.
-        when(userRepository.findById(CALLER)).thenReturn(Optional.of(user(CALLER, UserRole.ADMIN, false)));
+        stubUser(user(CALLER, UserRole.ADMIN, false));
 
         assertThat(userService.setActive(CALLER, false, CALLER).active()).isFalse();
         verify(userRepository, never()).save(any());
@@ -316,7 +317,7 @@ class UserServiceTest {
 
     @Test
     void lockingSelfIsConflict() {
-        when(userRepository.findById(CALLER)).thenReturn(Optional.of(user(CALLER, UserRole.ADMIN, true)));
+        stubUser(user(CALLER, UserRole.ADMIN, true));
         when(userRepository.lockActiveAdmins()).thenReturn(activeAdmins(5));
 
         assertThatThrownBy(() -> userService.setActive(CALLER, false, CALLER)).isInstanceOf(ConflictException.class);
@@ -324,7 +325,7 @@ class UserServiceTest {
 
     @Test
     void lockingLastActiveAdminIsConflict() {
-        when(userRepository.findById(41L)).thenReturn(Optional.of(user(41L, UserRole.ADMIN, true)));
+        stubUser(user(41L, UserRole.ADMIN, true));
         when(userRepository.lockActiveAdmins()).thenReturn(activeAdmins(1));
 
         assertThatThrownBy(() -> userService.setActive(41L, false, CALLER)).isInstanceOf(ConflictException.class);
@@ -332,7 +333,7 @@ class UserServiceTest {
 
     @Test
     void lockingDriverWithUnfinishedTripIsConflict() {
-        when(userRepository.findById(42L)).thenReturn(Optional.of(user(42L, UserRole.DRIVER, true)));
+        stubUser(user(42L, UserRole.DRIVER, true));
         when(tripRepository.existsByDriverIdAndStatusIn(eq(42L), any())).thenReturn(true);
 
         assertThatThrownBy(() -> userService.setActive(42L, false, CALLER)).isInstanceOf(ConflictException.class);
@@ -342,7 +343,7 @@ class UserServiceTest {
     @Test
     void unlockingSkipsGuards() {
         User driver = user(43L, UserRole.DRIVER, false);
-        when(userRepository.findById(43L)).thenReturn(Optional.of(driver));
+        stubUser(driver);
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         assertThat(userService.setActive(43L, true, CALLER).active()).isTrue();
@@ -354,7 +355,7 @@ class UserServiceTest {
     @Test
     void updateKeepingTheSameRoleSkipsEveryGuard() {
         User driver = user(CALLER, UserRole.DRIVER, true);
-        when(userRepository.findById(CALLER)).thenReturn(Optional.of(driver));
+        stubUser(driver);
         when(profileRepository.findByUserId(CALLER)).thenReturn(Optional.empty());
         when(profileRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -368,7 +369,7 @@ class UserServiceTest {
 
     @Test
     void updateToEmployeeIsRejected() {
-        when(userRepository.findById(37L)).thenReturn(Optional.of(user(37L, UserRole.CUSTOMER, true)));
+        stubUser(user(37L, UserRole.CUSTOMER, true));
 
         assertThatThrownBy(() -> userService.update(37L, updateRequest("X", null, UserRole.EMPLOYEE), CALLER))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -377,21 +378,21 @@ class UserServiceTest {
     @Test
     void demotingALockedAdminDoesNotNeedAnotherActiveAdmin() {
         User lockedAdmin = user(38L, UserRole.ADMIN, false);
-        when(userRepository.findById(38L)).thenReturn(Optional.of(lockedAdmin));
+        stubUser(lockedAdmin);
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(profileRepository.findByUserId(38L)).thenReturn(Optional.empty());
         when(profileRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
+        // Admin rows are locked first (lock order, lead review 1.3 L14), but an inactive admin needs no other active one.
         assertThat(userService.update(38L, updateRequest("A", null, UserRole.CUSTOMER), CALLER).role())
                 .isEqualTo(UserRole.CUSTOMER);
-        verify(userRepository, never()).lockActiveAdmins();
     }
 
     @Test
     void becomingADriverAgainKeepsAnExistingDriverStatus() {
         User collector = user(39L, UserRole.COLLECTOR, true);
         collector.setDriverStatus(DriverStatus.ACTIVE);
-        when(userRepository.findById(39L)).thenReturn(Optional.of(collector));
+        stubUser(collector);
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(profileRepository.findByUserId(39L)).thenReturn(Optional.empty());
         when(profileRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -402,7 +403,7 @@ class UserServiceTest {
 
     @Test
     void lockingANonDriverNonAdminHitsNoGuardQuery() {
-        when(userRepository.findById(44L)).thenReturn(Optional.of(user(44L, UserRole.COLLECTOR, true)));
+        stubUser(user(44L, UserRole.COLLECTOR, true));
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         userService.setActive(44L, false, CALLER);
@@ -415,7 +416,7 @@ class UserServiceTest {
     void lockingAUserWithNullActiveSavesFalse() {
         User legacy = user(45L, UserRole.CUSTOMER, true);
         legacy.setIsActive(null);
-        when(userRepository.findById(45L)).thenReturn(Optional.of(legacy));
+        stubUser(legacy);
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         assertThat(userService.setActive(45L, false, CALLER).active()).isFalse();
@@ -425,7 +426,7 @@ class UserServiceTest {
     @Test
     void getUserReturnsProfileFields() {
         User driver = user(46L, UserRole.DRIVER, true);
-        when(userRepository.findById(46L)).thenReturn(Optional.of(driver));
+        stubUser(driver);
         when(profileRepository.findByUserId(46L)).thenReturn(Optional.of(profile(driver, "Tài Xế", "0901")));
 
         UserResponse response = userService.getUser(46L);
@@ -444,12 +445,55 @@ class UserServiceTest {
         assertThat(userService.create(request).phone()).isEqualTo("0901 234");
     }
 
+    @Test
+    void changingADriverLocksItsRowBeforeReadingIt() {
+        // Lead review 1.3 L14: serialised with TripService, which locks the same driver row.
+        stubUser(user(60L, UserRole.DRIVER, true));
+        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        userService.setActive(60L, false, CALLER);
+
+        verify(userRepository).findByIdForUpdate(60L);
+        verify(userRepository, never()).findById(60L);
+        verify(userRepository, never()).lockActiveAdmins();
+    }
+
+    @Test
+    void changingAnAdminLocksTheAdminRowsBeforeItsOwnRow() {
+        stubUser(user(61L, UserRole.ADMIN, true));
+        when(userRepository.lockActiveAdmins()).thenReturn(activeAdmins(2));
+        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        userService.setActive(61L, false, CALLER);
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(userRepository);
+        order.verify(userRepository).lockActiveAdmins();
+        order.verify(userRepository).findByIdForUpdate(61L);
+    }
+
     // ─── helpers ────────────────────────────────────────────────────────────
 
     private static List<User> activeAdmins(int count) {
         return java.util.stream.LongStream.rangeClosed(1, count)
                 .mapToObj(id -> user(100 + id, UserRole.ADMIN, true))
                 .toList();
+    }
+
+    // update / setActive read the role through a projection, then lock the row (lead review 1.3 L14);
+    // getUser reads with findById.
+    private void stubUser(User user) {
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findAuthStateById(user.getId())).thenReturn(Optional.of(new UserAuthStateProjection() {
+            @Override public Boolean getIsActive() { return user.getIsActive(); }
+            @Override public UserRole getRole() { return user.getRole(); }
+        }));
+    }
+
+    private void stubMissing(Long id) {
+        when(userRepository.findById(id)).thenReturn(Optional.empty());
+        when(userRepository.findByIdForUpdate(id)).thenReturn(Optional.empty());
+        when(userRepository.findAuthStateById(id)).thenReturn(Optional.empty());
     }
 
     private static User user(long id, UserRole role, boolean active) {

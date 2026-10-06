@@ -10,13 +10,17 @@ import com.ticket_system.manage_revenue_ticket.repository.ProfileRepository;
 import com.ticket_system.manage_revenue_ticket.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -24,6 +28,20 @@ class AuthServiceTest {
     private final UserRepository userRepository = mock(UserRepository.class);
     private final ProfileRepository profileRepository = mock(ProfileRepository.class);
     private final AuthService authService = new AuthService(userRepository, profileRepository);
+
+    @Test
+    void loginWithUnknownEmailStillRunsOneBcryptCheck() {
+        // B37 b: same 401 and about the same time as a wrong password, so emails cannot be probed by timing.
+        BCryptPasswordEncoder encoder = spy(new BCryptPasswordEncoder(4));
+        AuthService timed = new AuthService(userRepository, profileRepository, encoder);
+        when(userRepository.findByEmail("nobody@example.com")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> timed.login(UserRequestDto.builder()
+                .email("nobody@example.com").password("whatever1").build()))
+                .isInstanceOf(SecurityException.class)
+                .hasMessage(AuthService.INVALID_CREDENTIALS);
+        verify(encoder).matches(eq("whatever1"), anyString());
+    }
 
     @Test
     void registerIgnoresAdminRoleFromRequestBody() {

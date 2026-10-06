@@ -55,6 +55,11 @@ public interface UserRepository extends JpaRepository<User, Long > {
      * admins locking or demoting each other at the same time cannot both pass the last-admin check.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select u from User u where u.role = com.ticket_system.common.Enum.UserRole.ADMIN and u.isActive = true")
+    @Query("select u from User u where u.role = com.ticket_system.common.Enum.UserRole.ADMIN and u.isActive = true order by u.id")
     List<User> lockActiveAdmins();
+
+    /** Row lock so two trips cannot both pass the overlap check for this driver. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where u.id = :id")
+    Optional<User> findByIdForUpdate(@Param("id") Long id);
 }

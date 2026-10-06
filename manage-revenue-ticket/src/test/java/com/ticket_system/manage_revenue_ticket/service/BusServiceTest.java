@@ -7,10 +7,13 @@ import com.ticket_system.manage_revenue_ticket.Dto.request.BusRequest;
 import com.ticket_system.manage_revenue_ticket.Dto.response.BusResponse;
 import com.ticket_system.manage_revenue_ticket.Enum.BusStatus;
 import com.ticket_system.manage_revenue_ticket.entity.Buses;
+import com.ticket_system.manage_revenue_ticket.entity.Trip;
 import com.ticket_system.manage_revenue_ticket.repository.BusesRepository;
+import com.ticket_system.manage_revenue_ticket.repository.TicketRepository;
 import com.ticket_system.manage_revenue_ticket.repository.TripRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -25,6 +28,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -35,7 +39,8 @@ class BusServiceTest {
 
     private final BusesRepository busRepository = mock(BusesRepository.class);
     private final TripRepository tripRepository = mock(TripRepository.class);
-    private final BusService busService = new BusService(busRepository, tripRepository);
+    private final TicketRepository ticketRepository = mock(TicketRepository.class);
+    private final BusService busService = new BusService(busRepository, tripRepository, ticketRepository);
 
     @Test
     void listSortsByIdDescAndFiltersByStatus() {
@@ -93,7 +98,7 @@ class BusServiceTest {
 
     @Test
     void updateToPlateOfAnotherBusIsConflict() {
-        when(busRepository.findById(1L)).thenReturn(Optional.of(bus(1L, "51A-1", BusStatus.AVAILABLE)));
+        stubBus(1L, Optional.of(bus(1L, "51A-1", BusStatus.AVAILABLE)));
         when(busRepository.existsByPlateNumberAndIdNot("51A-2", 1L)).thenReturn(true);
 
         assertThatThrownBy(() -> busService.update(1L, request("51A-2", BusStatus.AVAILABLE)))
@@ -102,7 +107,7 @@ class BusServiceTest {
 
     @Test
     void updateUnknownBusIsNotFound() {
-        when(busRepository.findById(1L)).thenReturn(Optional.empty());
+        stubBus(1L, Optional.empty());
 
         assertThatThrownBy(() -> busService.update(1L, request("51A-1", BusStatus.AVAILABLE)))
                 .isInstanceOf(ResourceNotFoundException.class);
@@ -110,7 +115,7 @@ class BusServiceTest {
 
     @Test
     void updateCannotSetInUseManually() {
-        when(busRepository.findById(1L)).thenReturn(Optional.of(bus(1L, "51A-1", BusStatus.AVAILABLE)));
+        stubBus(1L, Optional.of(bus(1L, "51A-1", BusStatus.AVAILABLE)));
 
         assertThatThrownBy(() -> busService.update(1L, request("51A-1", BusStatus.IN_USE)))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -119,7 +124,7 @@ class BusServiceTest {
     @Test
     void busRunningATripCannotChangeStatusButCanChangeOtherFields() {
         Buses running = bus(1L, "51A-1", BusStatus.IN_USE);
-        when(busRepository.findById(1L)).thenReturn(Optional.of(running));
+        stubBus(1L, Optional.of(running));
         when(tripRepository.existsByBusIdAndStatusIn(1L, BusService.UNFINISHED_TRIP_STATUSES)).thenReturn(true);
         when(busRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -133,9 +138,21 @@ class BusServiceTest {
     }
 
     @Test
+    void availableBusWithAScheduledTripCannotGoToMaintenance() {
+        // Spec 1.3 D8 = A — also for legacy rows where IN_USE was never set.
+        stubBus(1L, Optional.of(bus(1L, "51A-1", BusStatus.AVAILABLE)));
+        when(tripRepository.existsByBusIdAndStatusIn(1L, BusService.UNFINISHED_TRIP_STATUSES)).thenReturn(true);
+
+        assertThatThrownBy(() -> busService.update(1L, request("51A-1", BusStatus.MAINTENANCE)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("bảo dưỡng");
+        verify(busRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
     void staleInUseBusWithoutUnfinishedTripCanBeFreed() {
-        // Nothing resets IN_USE when a trip ends yet (1.3), so the admin must be able to free the bus.
-        when(busRepository.findById(1L)).thenReturn(Optional.of(bus(1L, "51A-1", BusStatus.IN_USE)));
+        // TripService recomputes IN_USE (1.3 D1); a stale IN_USE without unfinished trips can still be freed by hand.
+        stubBus(1L, Optional.of(bus(1L, "51A-1", BusStatus.IN_USE)));
         when(busRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
 
         BusResponse updated = busService.update(1L, request("51A-1", BusStatus.MAINTENANCE));
@@ -145,7 +162,7 @@ class BusServiceTest {
 
     @Test
     void updateHitByConcurrentDuplicatePlateIsConflict() {
-        when(busRepository.findById(1L)).thenReturn(Optional.of(bus(1L, "51A-1", BusStatus.AVAILABLE)));
+        stubBus(1L, Optional.of(bus(1L, "51A-1", BusStatus.AVAILABLE)));
         when(busRepository.saveAndFlush(any())).thenThrow(plateViolation());
 
         assertThatThrownBy(() -> busService.update(1L, request("51A-2", BusStatus.AVAILABLE)))
@@ -165,8 +182,8 @@ class BusServiceTest {
 
     @Test
     void getBusReturnsResponseOrNotFound() {
-        when(busRepository.findById(1L)).thenReturn(Optional.of(bus(1L, "51A-1", BusStatus.AVAILABLE)));
-        when(busRepository.findById(2L)).thenReturn(Optional.empty());
+        stubBus(1L, Optional.of(bus(1L, "51A-1", BusStatus.AVAILABLE)));
+        stubBus(2L, Optional.empty());
 
         assertThat(busService.getBus(1L).plateNumber()).isEqualTo("51A-1");
         assertThatThrownBy(() -> busService.getBus(2L)).isInstanceOf(ResourceNotFoundException.class);
@@ -186,7 +203,7 @@ class BusServiceTest {
     @Test
     void deleteRacingATripInsertIsConflict() {
         Buses bus = bus(1L, "51A-1", BusStatus.AVAILABLE);
-        when(busRepository.findById(1L)).thenReturn(Optional.of(bus));
+        stubBus(1L, Optional.of(bus));
         doThrow(new DataIntegrityViolationException("trips_fk_bus")).when(busRepository).flush();
 
         assertThatThrownBy(() -> busService.delete(1L))
@@ -196,7 +213,7 @@ class BusServiceTest {
 
     @Test
     void deleteBusWithUnfinishedTripIsConflict() {
-        when(busRepository.findById(1L)).thenReturn(Optional.of(bus(1L, "51A-1", BusStatus.IN_USE)));
+        stubBus(1L, Optional.of(bus(1L, "51A-1", BusStatus.IN_USE)));
         when(tripRepository.existsByBusIdAndStatusIn(1L, BusService.UNFINISHED_TRIP_STATUSES)).thenReturn(true);
 
         assertThatThrownBy(() -> busService.delete(1L))
@@ -207,7 +224,7 @@ class BusServiceTest {
 
     @Test
     void deleteBusWithTripHistoryIsConflict() {
-        when(busRepository.findById(1L)).thenReturn(Optional.of(bus(1L, "51A-1", BusStatus.AVAILABLE)));
+        stubBus(1L, Optional.of(bus(1L, "51A-1", BusStatus.AVAILABLE)));
         when(tripRepository.existsByBusId(1L)).thenReturn(true);
 
         assertThatThrownBy(() -> busService.delete(1L))
@@ -219,7 +236,7 @@ class BusServiceTest {
     @Test
     void deleteBusWithoutTripsDeletes() {
         Buses bus = bus(1L, "51A-1", BusStatus.AVAILABLE);
-        when(busRepository.findById(1L)).thenReturn(Optional.of(bus));
+        stubBus(1L, Optional.of(bus));
 
         busService.delete(1L);
 
@@ -231,6 +248,77 @@ class BusServiceTest {
         when(busRepository.findById(anyLong())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> busService.delete(1L)).isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    // ─── B36 b: capacity below what is already sold ─────────────────────────
+
+    @Test
+    void shrinkingBelowTheHighestSoldSeatIsConflict() {
+        stubBus(1L, Optional.of(bus(1L, "51A-1", BusStatus.IN_USE)));
+        when(ticketRepository.findRequiredCapacityForBus(1L)).thenReturn(30);
+        BusRequest request = request("51A-1", BusStatus.IN_USE);
+        request.setCapacity(29);
+
+        assertThatThrownBy(() -> busService.update(1L, request))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("ghế 30");
+        verify(busRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void shrinkingDownToTheHighestSoldSeatIsAllowed() {
+        stubBus(1L, Optional.of(bus(1L, "51A-1", BusStatus.IN_USE)));
+        when(ticketRepository.findRequiredCapacityForBus(1L)).thenReturn(30);
+        when(busRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        BusRequest request = request("51A-1", BusStatus.IN_USE);
+        request.setCapacity(30);
+
+        assertThat(busService.update(1L, request).capacity()).isEqualTo(30);
+    }
+
+    @Test
+    void growingOrKeepingCapacityDoesNotQueryTickets() {
+        stubBus(1L, Optional.of(bus(1L, "51A-1", BusStatus.AVAILABLE)));
+        when(busRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        busService.update(1L, request("51A-1", BusStatus.AVAILABLE));
+
+        verify(ticketRepository, never()).findRequiredCapacityForBus(anyLong());
+    }
+
+    @Test
+    void shrinkIsRefusedWhenATripAppearedBetweenTheTripLocksAndTheBusLock() {
+        // B37 a: trip 8 was created after the trip locks were taken, so it is not locked here.
+        stubBus(1L, Optional.of(bus(1L, "51A-1", BusStatus.IN_USE)));
+        Trip locked = new Trip();
+        locked.setId(7L);
+        when(tripRepository.findIdsByBusIdAndStatusIn(1L, BusService.UNFINISHED_TRIP_STATUSES))
+                .thenReturn(List.of(7L), List.of(7L, 8L));
+        when(tripRepository.lockByIdIn(List.of(7L))).thenReturn(List.of(locked));
+        BusRequest request = request("51A-1", BusStatus.IN_USE);
+        request.setCapacity(30);
+
+        assertThatThrownBy(() -> busService.update(1L, request))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("thử lại");
+        verify(ticketRepository, never()).findRequiredCapacityForBus(anyLong());
+        verify(busRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void updateLocksTheUnfinishedTripsByIdBeforeTheBus() {
+        // Trip before bus, the order TicketService (sale) and TripService use; trips are locked by primary
+        // key after a plain id read, never by a locking scan of the bus index (L34).
+        stubBus(1L, Optional.of(bus(1L, "51A-1", BusStatus.AVAILABLE)));
+        when(busRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(tripRepository.findIdsByBusIdAndStatusIn(1L, BusService.UNFINISHED_TRIP_STATUSES)).thenReturn(List.of(7L));
+
+        busService.update(1L, request("51A-1", BusStatus.AVAILABLE));
+
+        InOrder order = inOrder(tripRepository, busRepository);
+        order.verify(tripRepository).findIdsByBusIdAndStatusIn(1L, BusService.UNFINISHED_TRIP_STATUSES);
+        order.verify(tripRepository).lockByIdIn(List.of(7L));
+        order.verify(busRepository).findByIdForUpdate(1L);
     }
 
     private static DataIntegrityViolationException plateViolation() {
@@ -249,5 +337,11 @@ class BusServiceTest {
     private static Buses bus(Long id, String plate, BusStatus status) {
         Buses bus = Buses.builder().id(id).plateNumber(plate).capacity(45).status(status).build();
         return bus;
+    }
+
+    // update() takes a row lock (findByIdForUpdate); other paths read with findById.
+    private void stubBus(Long id, Optional<Buses> result) {
+        when(busRepository.findById(id)).thenReturn(result);
+        when(busRepository.findByIdForUpdate(id)).thenReturn(result);
     }
 }

@@ -57,7 +57,7 @@ class RouteServiceTest {
 
     @Test
     void updateUnknownRouteIsNotFoundWithRouteMessage() {
-        when(routeRepository.findById(9L)).thenReturn(Optional.empty());
+        stubRoute(9L, Optional.empty());
 
         assertThatThrownBy(() -> routeService.updateRoute(9L, request("A", "B")))
                 .isInstanceOf(ResourceNotFoundException.class)
@@ -68,7 +68,7 @@ class RouteServiceTest {
     void updateReturnsUpdatedRoute() {
         Route route = new Route();
         route.setId(9L);
-        when(routeRepository.findById(9L)).thenReturn(Optional.of(route));
+        stubRoute(9L, Optional.of(route));
         when(routeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         RouteResponse updated = routeService.updateRoute(9L, request("A", "B"));
@@ -104,14 +104,14 @@ class RouteServiceTest {
 
     @Test
     void getUnknownRouteIsNotFound() {
-        when(routeRepository.findById(9L)).thenReturn(Optional.empty());
+        stubRoute(9L, Optional.empty());
 
         assertThatThrownBy(() -> routeService.getRoute(9L)).isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
     void updateWithSameStartAndEndIsRejected() {
-        when(routeRepository.findById(9L)).thenReturn(Optional.of(new Route()));
+        stubRoute(9L, Optional.of(new Route()));
 
         assertThatThrownBy(() -> routeService.updateRoute(9L, request("Đà Nẵng", "ĐÀ NẴNG")))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -120,14 +120,14 @@ class RouteServiceTest {
 
     @Test
     void deleteUnknownRouteIsNotFound() {
-        when(routeRepository.findById(9L)).thenReturn(Optional.empty());
+        stubRoute(9L, Optional.empty());
 
         assertThatThrownBy(() -> routeService.deleteRoute(9L)).isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
     void deleteRacingATripInsertIsConflict() {
-        when(routeRepository.findById(1L)).thenReturn(Optional.of(new Route()));
+        stubRoute(1L, Optional.of(new Route()));
         doThrow(new DataIntegrityViolationException("trips_fk_route")).when(routeRepository).flush();
 
         assertThatThrownBy(() -> routeService.deleteRoute(1L))
@@ -137,7 +137,7 @@ class RouteServiceTest {
 
     @Test
     void deleteRouteWithUnfinishedTripIsConflict() {
-        when(routeRepository.findById(1L)).thenReturn(Optional.of(new Route()));
+        stubRoute(1L, Optional.of(new Route()));
         when(tripRepository.existsByRouteIdAndStatusIn(1L, BusService.UNFINISHED_TRIP_STATUSES)).thenReturn(true);
 
         assertThatThrownBy(() -> routeService.deleteRoute(1L))
@@ -148,7 +148,7 @@ class RouteServiceTest {
 
     @Test
     void deleteRouteWithTripHistoryIsConflict() {
-        when(routeRepository.findById(1L)).thenReturn(Optional.of(new Route()));
+        stubRoute(1L, Optional.of(new Route()));
         when(tripRepository.existsByRouteId(1L)).thenReturn(true);
 
         assertThatThrownBy(() -> routeService.deleteRoute(1L))
@@ -160,11 +160,42 @@ class RouteServiceTest {
     @Test
     void deleteRouteWithoutTripsDeletes() {
         Route route = new Route();
-        when(routeRepository.findById(1L)).thenReturn(Optional.of(route));
+        stubRoute(1L, Optional.of(route));
 
         routeService.deleteRoute(1L);
 
         verify(routeRepository).delete(route);
+    }
+
+    @Test
+    void deactivatingARouteWithUnfinishedTripsIsConflict() {
+        // Spec 1.3 D8 = A.
+        Route route = new Route();
+        route.setId(9L);
+        route.setRouteName("HN - HP");
+        route.setStatus(RouteStatus.ACTIVE);
+        stubRoute(9L, Optional.of(route));
+        when(tripRepository.existsByRouteIdAndStatusIn(9L, BusService.UNFINISHED_TRIP_STATUSES)).thenReturn(true);
+        RouteRequestDto deactivate = request("A", "B");
+        deactivate.setStatus(RouteStatus.INACTIVE);
+
+        assertThatThrownBy(() -> routeService.updateRoute(9L, deactivate))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("chưa kết thúc");
+        verify(routeRepository, never()).save(any());
+    }
+
+    @Test
+    void deactivatingARouteWithoutUnfinishedTripsWorks() {
+        Route route = new Route();
+        route.setId(9L);
+        route.setStatus(RouteStatus.ACTIVE);
+        stubRoute(9L, Optional.of(route));
+        when(routeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        RouteRequestDto deactivate = request("A", "B");
+        deactivate.setStatus(RouteStatus.INACTIVE);
+
+        assertThat(routeService.updateRoute(9L, deactivate).status()).isEqualTo(RouteStatus.INACTIVE);
     }
 
     private static RouteRequestDto request(String start, String end) {
@@ -175,5 +206,11 @@ class RouteServiceTest {
         dto.setDistanceKm(new BigDecimal("120.00"));
         dto.setStatus(RouteStatus.ACTIVE);
         return dto;
+    }
+
+    // update() takes a row lock (findByIdForUpdate); other paths read with findById.
+    private void stubRoute(Long id, Optional<Route> result) {
+        when(routeRepository.findById(id)).thenReturn(result);
+        when(routeRepository.findByIdForUpdate(id)).thenReturn(result);
     }
 }

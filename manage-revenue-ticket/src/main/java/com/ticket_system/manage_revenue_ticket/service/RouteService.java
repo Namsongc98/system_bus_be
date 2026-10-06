@@ -15,6 +15,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -53,9 +54,16 @@ public class RouteService {
     }
 
     // thay đổi tuyến đường
-    @Transactional
+    // Row lock first: serialised with trip creation on this route (TripService), see D8 below.
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public RouteResponse updateRoute(Long routeId, RouteRequestDto requestDto) {
-        Route route = findRoute(routeId);
+        Route route = routeRepository.findByIdForUpdate(routeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tuyến với id: " + routeId));
+        // D8 = A (spec 1.3): a route with a scheduled or ongoing trip cannot be deactivated.
+        if (requestDto.getStatus() == RouteStatus.INACTIVE && route.getStatus() != RouteStatus.INACTIVE
+                && tripRepository.existsByRouteIdAndStatusIn(routeId, BusService.UNFINISHED_TRIP_STATUSES)) {
+            throw new ConflictException("Tuyến " + route.getRouteName() + " còn chuyến chưa kết thúc, không thể ngừng hoạt động");
+        }
         apply(route, requestDto);
         return RouteResponse.from(routeRepository.save(route));
     }

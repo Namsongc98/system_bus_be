@@ -1,5 +1,6 @@
 package com.ticket_system.manage_revenue_ticket.service;
 
+import com.ticket_system.common.exception.ResourceNotFoundException;
 import com.ticket_system.manage_revenue_ticket.entity.BaseSalary;
 import com.ticket_system.manage_revenue_ticket.entity.User;
 import com.ticket_system.manage_revenue_ticket.repository.BaseSalaryRepository;
@@ -26,7 +27,7 @@ public class BaseSalaryService {
     // tạo base lương
     public BaseSalary save(Long userId, BigDecimal salary, LocalDate effectiveFrom) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User không tồn tại"));
+                .orElseThrow(() -> new ResourceNotFoundException("User không tồn tại"));
 
         BaseSalary baseSalary = new BaseSalary();
         baseSalary.setUser(user);
@@ -40,7 +41,7 @@ public class BaseSalaryService {
     // update base lương
     public BaseSalary updateBaseSalary(Long id, BigDecimal newSalary) {
         BaseSalary baseSalary = baseSalaryRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy base salary với id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy base salary với id: " + id));
 
         baseSalary.setBaseSalary(newSalary);
         baseSalary.setUpdatedAt(LocalDateTime.now());

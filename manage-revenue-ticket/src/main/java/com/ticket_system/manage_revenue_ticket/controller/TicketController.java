@@ -93,7 +93,10 @@ public class TicketController {
         return ResponseEntity.ok(BaseResponseDto.success(201,"Get Successfully",result));
     }
 
+    // B20: ADMIN only, like POST /api/ticket (customerId/sellerId come from the body). Task 4.3 decides
+    // whether a customer may redeem for themselves; that path must take customerId from the JWT.
     @PostMapping("/loyalty_reward/{idReward}")
+    @RoleRequired(UserRole.ADMIN)
     public  ResponseEntity<BaseResponseDto<Ticket>> createTicketByLoyalty(
             @RequestBody TicketRequestDto responseDto,
             @PathVariable Long idReward

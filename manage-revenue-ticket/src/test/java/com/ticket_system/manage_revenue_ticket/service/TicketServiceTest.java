@@ -19,6 +19,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
@@ -76,6 +77,7 @@ class TicketServiceTest {
         customer = user(CUSTOMER_ID);
 
         lenient().when(tripRepository.findById(TRIP_ID)).thenReturn(Optional.of(trip));
+        lenient().when(tripRepository.findByIdForUpdate(TRIP_ID)).thenReturn(Optional.of(trip));
         lenient().when(userRepository.findById(CUSTOMER_ID)).thenReturn(Optional.of(customer));
         lenient().when(userRepository.findById(SELLER_ID)).thenReturn(Optional.of(user(SELLER_ID)));
         lenient().when(ticketRepository.saveAndFlush(any(Ticket.class))).thenAnswer(inv -> {
@@ -126,6 +128,18 @@ class TicketServiceTest {
         assertThatThrownBy(() -> service.createTicket(request(1)))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("Ghế 1");
+        verify(ticketRepository, never()).saveAndFlush(any());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = TripStatus.class, names = {"ONGOING", "COMPLETED", "CANCELLED"})
+    void createTicketOnATripThatIsNotScheduledIsConflict(TripStatus status) {
+        // Spec 1.3 S10: a cancelled or finished trip must not sell tickets.
+        trip.setStatus(status);
+
+        assertThatThrownBy(() -> service.createTicket(request(1)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining(status.name());
         verify(ticketRepository, never()).saveAndFlush(any());
     }
 
@@ -207,6 +221,129 @@ class TicketServiceTest {
         verify(eventPublisher).publishEvent(new SeatRebookedEvent(TRIP_ID, 2, 50L, CUSTOMER_ID));
     }
 
+    @ParameterizedTest
+    @EnumSource(value = TripStatus.class, names = {"ONGOING", "COMPLETED", "CANCELLED"})
+    void updateTicketOnATripThatIsNotScheduledIsConflict(TripStatus status) {
+        // Spec 1.3 S10: the ticket's own trip decides, and it is read with the row lock.
+        Ticket existing = existingTicket(1);
+        trip.setStatus(status);
+
+        assertThatThrownBy(() -> service.updateTicket(50L, request(2)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining(status.name());
+        assertThat(existing.getSeatNumber()).isEqualTo(1);
+        verify(tripRepository).findByIdForUpdate(TRIP_ID);
+        verify(ticketRepository, never()).saveAndFlush(any());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = TripStatus.class, names = {"ONGOING", "COMPLETED", "CANCELLED"})
+    void loyaltyTicketOnATripThatIsNotScheduledIsConflict(TripStatus status) {
+        trip.setStatus(status);
+
+        assertThatThrownBy(() -> service.createTicketByLoyalty(request(1), 1L))
+                .isInstanceOf(ConflictException.class);
+        verify(loyaltyPointRepository, never()).save(any());
+        verify(ticketRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void updateTicketLocksTheTripBeforeReadingTheTicket() {
+        // Lead review 1.3 L13: reading the ticket first would let a concurrent trip cancel be overwritten.
+        existingTicket(1);
+
+        service.updateTicket(50L, request(1));
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(ticketRepository, tripRepository);
+        order.verify(ticketRepository).findTripIdById(50L);
+        order.verify(tripRepository).findByIdForUpdate(TRIP_ID);
+        order.verify(ticketRepository).findById(50L);
+    }
+
+    @Test
+    void updatingACancelledTicketIsConflict() {
+        Ticket cancelled = existingTicket(1);
+        cancelled.setStatusTicket(TicketStatus.CANCELLED);
+
+        assertThatThrownBy(() -> service.updateTicket(50L, request(2))).isInstanceOf(ConflictException.class);
+        verify(userRepository, never()).save(any());
+        verify(ticketRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void ticketMovedToAnotherTripAfterTheLockIsConflict() {
+        // Lead review 1.3 L22: the ticket must still belong to the trip that was locked.
+        Ticket ticket = existingTicket(1);
+        Trip other = new Trip();
+        other.setId(TRIP_ID + 1);
+        ticket.setTrip(other);
+
+        assertThatThrownBy(() -> service.updateTicket(50L, request(1)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("thử lại");
+        verify(ticketRepository, never()).saveAndFlush(any());
+    }
+
+    // ─── cancelTicket (lead review 1.3 L20, B36 a) ─────────────────────────
+
+    @Test
+    void cancelTicketLocksTheTripBeforeReadingTheTicket() {
+        existingTicket(1);
+
+        service.cancelTicket(50L);
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(ticketRepository, tripRepository);
+        order.verify(ticketRepository).findTripIdById(50L);
+        order.verify(tripRepository).findByIdForUpdate(TRIP_ID);
+        order.verify(ticketRepository).findById(50L);
+        order.verify(ticketRepository).saveAndFlush(any(Ticket.class));
+    }
+
+    @Test
+    void cancellingTheLastActiveTicketFreesTheCustomer() {
+        Ticket ticket = existingTicket(1);
+        customer.setUserStatus(CustomerStatus.BOOKED);
+        when(ticketRepository.existsByCustomerIdAndStatusTicketNot(CUSTOMER_ID, TicketStatus.CANCELLED)).thenReturn(false);
+
+        Ticket cancelled = service.cancelTicket(50L);
+
+        assertThat(cancelled.getStatusTicket()).isEqualTo(TicketStatus.CANCELLED);
+        assertThat(ticket.getCustomer().getUserStatus()).isEqualTo(CustomerStatus.NOT_BOOKED);
+        verify(userRepository).save(customer);
+    }
+
+    @Test
+    void cancellingKeepsTheCustomerBookedWhileAnotherTicketIsActive() {
+        existingTicket(1);
+        customer.setUserStatus(CustomerStatus.BOOKED);
+        when(ticketRepository.existsByCustomerIdAndStatusTicketNot(CUSTOMER_ID, TicketStatus.CANCELLED)).thenReturn(true);
+
+        service.cancelTicket(50L);
+
+        assertThat(customer.getUserStatus()).isEqualTo(CustomerStatus.BOOKED);
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void cancellingAnAlreadyCancelledTicketIsConflict() {
+        // Same 409 as editing a cancelled ticket (L22: one error code for both).
+        existingTicket(1).setStatusTicket(TicketStatus.CANCELLED);
+
+        assertThatThrownBy(() -> service.cancelTicket(50L)).isInstanceOf(ConflictException.class);
+        verify(ticketRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void ticketSalesReadTheTripWithTheRowLock() {
+        when(ticketRepository.countActiveTicketsByTripId(TRIP_ID)).thenReturn(0L);
+        when(ticketRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.createTicket(request(1));
+
+        verify(tripRepository).findByIdForUpdate(TRIP_ID);
+        verify(tripRepository, never()).findById(anyLong());
+    }
+
     private Ticket existingTicket(int seat) {
         Ticket ticket = new Ticket();
         ticket.setId(50L);
@@ -214,7 +351,9 @@ class TicketServiceTest {
         ticket.setCustomer(customer);
         ticket.setSeatNumber(seat);
         ticket.setStatusTicket(TicketStatus.PENDING);
-        when(ticketRepository.findById(50L)).thenReturn(Optional.of(ticket));
+        lenient().when(ticketRepository.findTripIdById(50L)).thenReturn(Optional.of(TRIP_ID));
+        // Not read when the trip is closed: the trip lock and check come first (L13).
+        lenient().when(ticketRepository.findById(50L)).thenReturn(Optional.of(ticket));
         return ticket;
     }
 

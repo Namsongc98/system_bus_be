@@ -13,11 +13,13 @@ import com.ticket_system.manage_revenue_ticket.Enum.DriverStatus;
 import com.ticket_system.manage_revenue_ticket.entity.Profile;
 import com.ticket_system.manage_revenue_ticket.entity.User;
 import com.ticket_system.manage_revenue_ticket.projection.RoleCountProjection;
+import com.ticket_system.manage_revenue_ticket.projection.UserAuthStateProjection;
 import com.ticket_system.manage_revenue_ticket.repository.ProfileRepository;
 import com.ticket_system.manage_revenue_ticket.repository.TripRepository;
 import com.ticket_system.manage_revenue_ticket.repository.UserRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.EnumMap;
@@ -104,9 +106,9 @@ public class UserService {
         return UserResponse.from(saved, profile);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public UserResponse update(Long userId, AdminUpdateUserRequest request, Long callerId) {
-        User user = findUser(userId);
+        User user = lockedUserForChange(userId);
         UserRole newRole = request.getRole();
         if (newRole != user.getRole()) {
             requireAssignable(newRole);
@@ -133,9 +135,9 @@ public class UserService {
         return UserResponse.from(user, profileRepository.save(profile));
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public UserResponse setActive(Long userId, boolean active, Long callerId) {
-        User user = findUser(userId);
+        User user = lockedUserForChange(userId);
         boolean currentlyActive = !Boolean.FALSE.equals(user.getIsActive());
         if (currentlyActive != active) {
             if (!active) {
@@ -149,6 +151,24 @@ public class UserService {
             user = userRepository.save(user);
         }
         return UserResponse.from(user, profileRepository.findByUserId(userId).orElse(null));
+    }
+
+    /**
+     * Lead review 1.3 L14: lock the user row before reading it, like TripService does for drivers, so
+     * locking / re-roling a driver and creating a trip for that driver are serialised, and the
+     * driverStatus TripService just recomputed is never overwritten by a stale copy. The role is read
+     * through a projection (no entity loaded before the lock). For an admin, the active-admin rows are
+     * locked first, in the same order lockActiveAdmins() always uses, so two admins acting on each
+     * other cannot deadlock.
+     */
+    private User lockedUserForChange(Long userId) {
+        UserAuthStateProjection state = userRepository.findAuthStateById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy người dùng"));
+        if (state.getRole() == UserRole.ADMIN) {
+            userRepository.lockActiveAdmins();
+        }
+        return userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy người dùng"));
     }
 
     private User findUser(Long userId) {

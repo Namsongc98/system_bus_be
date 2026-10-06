@@ -3,14 +3,17 @@ package com.ticket_system.manage_revenue_ticket.repository;
 import com.ticket_system.manage_revenue_ticket.Enum.BusStatus;
 import com.ticket_system.manage_revenue_ticket.entity.Buses;
 import com.ticket_system.manage_revenue_ticket.projection.CustomerRevenueByRouteProjection;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 public interface BusesRepository extends JpaRepository<Buses, Long> {
     boolean existsByPlateNumber(String plateNumber);
@@ -18,6 +21,11 @@ public interface BusesRepository extends JpaRepository<Buses, Long> {
     boolean existsByPlateNumberAndIdNot(String plateNumber, Long id);
 
     Page<Buses> findByStatus(BusStatus status, Pageable pageable);
+
+    /** Row lock (SELECT ... FOR UPDATE) so two trips cannot both pass the overlap check for this bus. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select b from Buses b where b.id = :id")
+    Optional<Buses> findByIdForUpdate(@Param("id") Long id);
 
     @Query(value = """
     SELECT b.id AS bus_id,

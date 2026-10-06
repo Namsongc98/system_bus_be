@@ -2,7 +2,10 @@ package com.ticket_system.common.exception;
 
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.TypeMismatchException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -26,6 +29,11 @@ import java.util.NoSuchElementException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler  {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    // B18: an unexpected error never echoes its message (SQL, class names, internal ids) to the caller;
+    // the stack trace goes to the server log instead.
+    static final String INTERNAL_ERROR_MESSAGE = "Lỗi hệ thống, vui lòng thử lại sau";
 
     private ResponseEntity<Object> buildResponseEntity(HttpStatus status, String message, HttpServletRequest request) {
         return new ResponseEntity<>(errorBody(status, message, request.getRequestURI()), status);
@@ -104,20 +112,18 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler  {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Object> handleAllExceptions(Exception ex, HttpServletRequest request) {
-            return buildResponseEntity(HttpStatus.INTERNAL_SERVER_ERROR,ex.getMessage(),request);
-//        return ResponseEntity
-//                .status(HttpStatus.INTERNAL_SERVER_ERROR)
-//                .body(BaseResponseDto.error(HttpStatus.INTERNAL_SERVER_ERROR.value(), message));
+        return internalError(ex, request);
     }
 
     // 💥 500: Lỗi hệ thống
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Object> handleRuntimeException(RuntimeException ex, HttpServletRequest request) {
-        return buildResponseEntity(HttpStatus.INTERNAL_SERVER_ERROR,ex.getMessage(), request);
-//        String message = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
-//        return ResponseEntity
-//                .status(HttpStatus.INTERNAL_SERVER_ERROR)
-//                .body(BaseResponseDto.error(HttpStatus.INTERNAL_SERVER_ERROR.value(), message));
+        return internalError(ex, request);
+    }
+
+    private ResponseEntity<Object> internalError(Exception ex, HttpServletRequest request) {
+        log.error("Unhandled error on {} {}", request.getMethod(), request.getRequestURI(), ex);
+        return buildResponseEntity(HttpStatus.INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MESSAGE, request);
     }
 
     // ❌ 404: Không tìm thấy tài nguyên
@@ -160,6 +166,17 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler  {
     @ExceptionHandler(ConflictException.class)
     public ResponseEntity<Object> handleConflict(ConflictException ex, HttpServletRequest request) {
         return buildResponseEntity(HttpStatus.CONFLICT, ex.getMessage(), request);
+    }
+
+    // ⛔ 409: deadlock / lock wait timeout between two writers on the same rows (row locks, task 1.3).
+    // The database message is not echoed; the caller is asked to retry.
+    @ExceptionHandler(PessimisticLockingFailureException.class)
+    public ResponseEntity<Object> handleLockFailure(PessimisticLockingFailureException ex, HttpServletRequest request) {
+        // B36 c: frequent lock failures point at a hot row or a lock-order bug, so they are logged.
+        log.warn("Lock failure on {} {}: {}", request.getMethod(), request.getRequestURI(),
+                ex.getMostSpecificCause().getMessage());
+        return buildResponseEntity(HttpStatus.CONFLICT,
+                "Dữ liệu đang được người khác cập nhật, vui lòng thử lại", request);
     }
 
     // 🚫 403: tài khoản bị admin khoá

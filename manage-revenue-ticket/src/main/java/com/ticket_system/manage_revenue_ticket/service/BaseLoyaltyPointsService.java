@@ -1,5 +1,6 @@
 package com.ticket_system.manage_revenue_ticket.service;
 
+import com.ticket_system.common.exception.ResourceNotFoundException;
 import com.ticket_system.manage_revenue_ticket.Dto.request.BaseLoyaltyPointsRequest;
 import com.ticket_system.manage_revenue_ticket.Enum.BaseLoyaltyPointStatus;
 import com.ticket_system.manage_revenue_ticket.entity.BaseLoyaltyPoints;
@@ -21,7 +22,7 @@ public class BaseLoyaltyPointsService {
         Pageable limitOne = PageRequest.of(0, 1);
         List<BaseLoyaltyPoints> config = loyaltyRepo.findActiveByRole(role,limitOne);
         if(config.isEmpty()){
-            throw new RuntimeException("Not Found Base Point");
+            throw new ResourceNotFoundException("Chưa có cấu hình tích điểm");
         }
         BaseLoyaltyPoints  firstElement = config.getFirst();
         int points = ticketsBought / firstElement.getTicketsPerPoint();
@@ -44,7 +45,7 @@ public class BaseLoyaltyPointsService {
     // UPDATE
     public BaseLoyaltyPoints update(Long id, BaseLoyaltyPointsRequest request) {
         BaseLoyaltyPoints existing = loyaltyRepo.findById(id)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy cấu hình tích điểm với id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy cấu hình tích điểm với id: " + id));
 
         existing.setRoleName(request.getRoleName());
         existing.setTicketsPerPoint(request.getTicketsPerPoint());

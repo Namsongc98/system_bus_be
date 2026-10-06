@@ -1,5 +1,6 @@
 package com.ticket_system.manage_revenue_ticket.service;
 
+import com.ticket_system.common.exception.ResourceNotFoundException;
 import com.ticket_system.manage_revenue_ticket.entity.LoyaltyReward;
 import com.ticket_system.manage_revenue_ticket.repository.LoyaltyRewardRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,7 +32,7 @@ public class LoyaltyRewardService {
 
     public LoyaltyReward update(Long id, LoyaltyReward payload) {
         LoyaltyReward existing = rewardRepo.findById(id)
-                .orElseThrow(() -> new RuntimeException("Reward not found: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy phần thưởng: " + id));
         existing.setRewardName(payload.getRewardName());
         existing.setDescription(payload.getDescription());
         existing.setPointsRequired(payload.getPointsRequired());

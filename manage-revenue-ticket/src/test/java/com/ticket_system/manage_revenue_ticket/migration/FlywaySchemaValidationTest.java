@@ -20,7 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Proves the migrations (V1 baseline, V2 unique active seat, V3 bus status) build a schema that Hibernate
+ * Proves the migrations (V1 baseline, V2 unique active seat, V3 bus status, V4 trip search indexes) build a
+ * schema that Hibernate
  * {@code validate} accepts for all 13 entities. The context only starts if Flyway migrated and validation passed.
  * Requires a running Docker daemon.
  */
@@ -53,6 +54,13 @@ class FlywaySchemaValidationTest {
 
         assertThat(migrations).isEqualTo(4);
         assertThat(successful).isEqualTo(4);
+    }
+
+    @Test
+    void emptyDbRunsV1InsteadOfBeingBaselined() {
+        // 0.3: baseline-on-migrate only applies to a non-empty schema; a new install executes V1.
+        assertThat(jdbc.queryForObject(
+                "SELECT type FROM flyway_schema_history WHERE version = '1'", String.class)).isEqualTo("SQL");
     }
 
     @Test

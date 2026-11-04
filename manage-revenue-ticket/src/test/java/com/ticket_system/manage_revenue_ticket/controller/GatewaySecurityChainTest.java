@@ -1,5 +1,6 @@
 package com.ticket_system.manage_revenue_ticket.controller;
 
+import com.ticket_system.common.Enum.UserRole;
 import com.ticket_system.common.exception.CustomAccessDeniedHandler;
 import com.ticket_system.common.exception.CustomAuthEntryPoint;
 import com.ticket_system.common.filter.JwtAuthFilter;
@@ -49,6 +50,9 @@ class GatewaySecurityChainTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private JwtUtil jwtUtil;
+
     @Test
     void healthIsReachableWithoutTokenForKongProbe() throws Exception {
         mockMvc.perform(get("/actuator/health"))
@@ -64,6 +68,26 @@ class GatewaySecurityChainTest {
     void otherActuatorEndpointsStillNeedToken() throws Exception {
         mockMvc.perform(get("/actuator/metrics"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // 4.1a: /avatars/** used to be permitAll and skipped by JwtAuthFilter with no handler behind it.
+    // Public → no token would reach the dispatcher (404); skipped by the filter → a valid token is ignored (401).
+    @Test
+    void avatarsPathIsNotPublic() throws Exception {
+        mockMvc.perform(get("/avatars/1"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/avatars/x.png"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/profile/avatar"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void avatarsPathStillAuthenticatesAValidToken() throws Exception {
+        String bearer = "Bearer " + jwtUtil.generateAccessToken(42L, UserRole.CUSTOMER);
+
+        mockMvc.perform(get("/avatars/1").header("Authorization", bearer))
+                .andExpect(status().isNotFound());   // authenticated, then no handler
     }
 
     @Test

@@ -39,6 +39,8 @@
     <java.version>21</java.version>
     <!-- Boot 3.3.6 manages 1.19.8, which Docker Engine 29 rejects (HTTP 400 on /info). -->
     <testcontainers.version>1.21.4</testcontainers.version>
+    <!-- S3 API client for MinIO (or any S3-compatible store: Garage, SeaweedFS, AWS) -->
+    <aws.sdk.version>2.57.1</aws.sdk.version>
 	</properties>
 	<dependencies>
     <dependency>
@@ -53,6 +55,33 @@
     <dependency>
       <groupId>org.flywaydb</groupId>
       <artifactId>flyway-mysql</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>s3</artifactId>
+      <version>${aws.sdk.version}</version>
+      <exclusions>
+        <!-- only the sync client is used; the async Netty client is not needed -->
+        <exclusion>
+          <groupId>software.amazon.awssdk</groupId>
+          <artifactId>netty-nio-client</artifactId>
+        </exclusion>
+        <!-- needs a newer httpclient5 than Spring Boot 3.3 manages (5.3.1 → NoClassDefFoundError
+             TlsSocketStrategy); url-connection-client below uses the JDK instead -->
+        <exclusion>
+          <groupId>software.amazon.awssdk</groupId>
+          <artifactId>apache5-client</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>software.amazon.awssdk</groupId>
+          <artifactId>apache-client</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>url-connection-client</artifactId>
+      <version>${aws.sdk.version}</version>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>

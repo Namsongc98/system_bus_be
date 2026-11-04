@@ -1,0 +1,74 @@
+# MinIO — object storage S3-compatible cho avatar/file (bucket mặc định `user-avatars`).
+# Chạy (trong thư mục này, sau khi đã có ticket-system-network):
+#   docker compose --env-file ../../.env --env-file ../../.env.minio up -d                        # server
+#   docker compose --env-file ../../.env --env-file ../../.env.minio --profile init run --rm minio-init   # 1 lần: bucket + user app
+# `--env-file` chỉ dùng để thay ${...} bên dưới — container chỉ nhận đúng các biến được khai báo,
+# không nhận cả file (khác `env_file:` ở ../app, nơi BE cần nhiều biến).
+# MINIO_ROOT_USER / MINIO_ROOT_PASSWORD nằm RIÊNG trong ticket-system/.env.minio (git-ignore theo `.env.*`):
+# ../app nạp cả ticket-system/.env vào container BE, nên root key không được nằm trong file đó (4.1a review R4).
+#
+# ⚠ MinIO Community Edition: ngừng phát hành image từ 10/2025, repo archive 02/2026, minio/minio + minio/mc
+#   đã bị xoá khỏi Docker Hub (404). Dùng fork cộng đồng pgsty/minio + pgsty/mc (Pigsty/Silo, AGPL, KHÔNG phải
+#   official/verified) — đã kiểm tra image có `mc` (healthcheck) và `/bin/sh` (minio-init).
+#   Vẫn KHÔNG public cổng ra Internet, chỉ cho BE gọi qua mạng Docker. Prod: pin digest qua MINIO_IMAGE/MINIO_MC_IMAGE.
+#   BE nên gọi qua API S3 chuẩn → sau này đổi sang Garage/SeaweedFS chỉ là đổi MINIO_URL + credential.
+#
+# Ai kết nối tới đây:
+#   - BE trong container (../app): MINIO_URL=http://minio:9000 (qua ticket-system-network)
+#   - BE trong IntelliJ / mvn:     MINIO_URL=http://localhost:9010 (host 9000 đã bị kafka-ui chiếm)
+services:
+  minio:
+    image: ${MINIO_IMAGE:-pgsty/minio:RELEASE.2026-08-04T00-00-00Z}   # prod: MINIO_IMAGE=pgsty/minio@sha256:<digest> trong .env
+    container_name: minio               # = hostname trên mạng Docker; khớp MINIO_URL trong ../app/docker-compose.yml
+    command: server /data --console-address ":9001"
+    environment:
+      # `:?` bắt buộc: thiếu thì MinIO KHÔNG báo lỗi mà chạy với minioadmin/minioadmin mặc định.
+      # Compose nội suy cả file (kể cả service thuộc profile chưa bật) → chỉ đặt `:?` cho biến server cần.
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?thiếu MINIO_ROOT_USER trong .env.minio}          # tài khoản admin, KHÔNG đưa cho app
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?thiếu MINIO_ROOT_PASSWORD trong .env.minio}  # ≥ 8 ký tự
+    ports:
+      - "127.0.0.1:9010:9000"           # S3 API — chỉ loopback (IntelliJ, mc trên host)
+      - "127.0.0.1:9011:9001"           # Web console — prod: mở bằng SSH tunnel `ssh -L 9011:127.0.0.1:9011 vm1`
+    volumes:
+      - minio-data:/data                # volume có tên → `down` rồi `up` vẫn giữ dữ liệu (khác mysql/ hiện tại)
+    networks:
+      - ticket-system-network           # chung mạng với app → BE gọi http://minio:9000
+    healthcheck:                        # theo compose mẫu của MinIO: mc có sẵn trong image, alias `local` trỏ chính nó
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    mem_limit: 384m                     # ước lượng cho tải nhỏ (avatar) — chưa đo trên VM thật, theo dõi `docker stats`
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # Chạy 1 lần (profile init; chạy lại được): tạo bucket + user riêng cho app, quyền CHỈ trên bucket đó.
+  # App dùng MINIO_ACCESS_KEY / MINIO_SECRET_KEY (không phải root) → lộ key app không mất quyền admin.
+  # Script: ./init.sh — bước nào lỗi → container Exited (1), thành công → Exited (0).
+  minio-init:
+    image: ${MINIO_MC_IMAGE:-pgsty/mc:RELEASE.2026-09-16T00-00-00Z}
+    profiles: ["init"]
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?thiếu MINIO_ROOT_USER trong .env.minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?thiếu MINIO_ROOT_PASSWORD trong .env.minio}
+      # Không đặt `:?` ở đây: compose nội suy cả file → thiếu key app sẽ chặn luôn `up` server. init.sh tự kiểm tra.
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET:-user-avatars}
+    volumes:
+      - ./init.sh:/init.sh:ro           # script + giải thích từng bước nằm trong init.sh
+    entrypoint: ["/bin/sh", "/init.sh"] # image mc mặc định entrypoint = `mc` → đổi sang sh để chạy nhiều lệnh
+    networks:
+      - ticket-system-network
+
+volumes:
+  minio-data:
+
+networks:
+  ticket-system-network:
+    external: true                      # docker network create ticket-system-network (dùng chung mysql, kong, app, tls)

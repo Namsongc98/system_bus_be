@@ -16,7 +16,7 @@ services:
     container_name: booking-container  # = hostname tren mang Docker = target cua booking-upstream trong kong.yml
     restart: unless-stopped
     env_file:
-      - ../../.env                     # ticket-system/.env: secret (JWT_SECRET, DB_PASSWORD, MAIL_*, MINIO_*) — khong commit
+      - ../../.env                     # ticket-system/.env: secret (JWT_SECRET, DB_PASSWORD, MAIL_*, MINIO_* của app) — khong commit; root key MinIO ở .env.minio, KHÔNG để ở đây
     environment:                       # ghi de gia tri trong application.properties cho moi truong container
       SPRING_PROFILES_ACTIVE: prod     # nap them application-prod.properties (ddl-auto=validate, log...)
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql-ticket-system:3306/quan-ly-ban-hang   # mysql-ticket-system = ten container MySQL tren ticket-system-network
@@ -25,6 +25,7 @@ services:
       SPRING_REDIS_CLUSTER_NODES: redis-1:7001,redis-2:7002,redis-3:7003,redis-4:7004,redis-5:7005,redis-6:7006
       # Trong container: dùng thẳng IP 172.x mà cluster announce, không đổi sang 127.0.0.1
       APP_REDIS_MAP_DOCKER_IPS_TO_LOCALHOST: "false"
+      MINIO_URL: http://minio:9000     # container minio (../minio) trên ticket-system-network; .env giữ bản localhost:9010 cho IntelliJ
     networks:                          # moi mang cho phep phan giai ten container cua nhom tuong ung
       - ticket-system-network          # → Kong goi vao duoc; BE goi mysql-ticket-system
       - redis-cluster-net              # → redis-1..6 va IP 172.30.0.11-16 cluster announce
@@ -47,6 +48,7 @@ services:
       SPRING_REDIS_CLUSTER_NODES: redis-1:7001,redis-2:7002,redis-3:7003,redis-4:7004,redis-5:7005,redis-6:7006
       # Trong container: dùng thẳng IP 172.x mà cluster announce, không đổi sang 127.0.0.1
       APP_REDIS_MAP_DOCKER_IPS_TO_LOCALHOST: "false"
+      MINIO_URL: http://minio:9000     # container minio (../minio) trên ticket-system-network; .env giữ bản localhost:9010 cho IntelliJ
     networks:
       - ticket-system-network
       - redis-cluster-net

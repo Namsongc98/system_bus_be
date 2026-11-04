@@ -8,6 +8,7 @@ file này là tổng quan: các thành phần nối với nhau thế nào, chạ
 | `mysql/` | MySQL 8 — DB `quan-ly-ban-hang` | [mysql/README.md](mysql/README.md) |
 | `kafka/` | Kafka 3 broker (KRaft) + Kafka UI | [kafka/README.md](kafka/README.md) |
 | `redis-cluster/` | Redis Cluster 6 node | [redis-cluster/README.md](redis-cluster/README.md) |
+| `minio/` | MinIO — object storage S3 (avatar), chỉ nội bộ | [minio/README.md](minio/README.md) |
 | `kong/` | Kong API Gateway — điểm vào duy nhất của FE | [kong/README.md](kong/README.md) |
 | `app/` | 2 service Spring Boot chạy bằng container | [app/README.md](app/README.md) |
 | `tls/` | NGINX + Let's Encrypt trước Kong (chỉ prod) | [tls/README.md](tls/README.md) |
@@ -36,7 +37,7 @@ khác khi **cùng mạng**.
 
 | Mạng | Tạo bởi | Thành viên |
 |---|---|---|
-| `ticket-system-network` | tay: `docker network create ticket-system-network` | mysql, kong, app, tls |
+| `ticket-system-network` | tay: `docker network create ticket-system-network` | mysql, kong, app, tls, minio |
 | `kafka_kafka-net` | `kafka/docker-compose.yml` (tên = `<project kafka>_kafka-net`) | broker1-3, kafka-ui, app |
 | `redis-cluster-net` (172.30.0.0/16) | `redis-cluster/docker-compose.yml` | redis-1..6 (IP cố định 172.30.0.11-16), app |
 
@@ -115,6 +116,7 @@ image khi push nhánh `main`.
 
 ## Secret
 
-`app/` đọc `ticket-system/.env` (không commit). Tên biến (không giá trị):
+`app/` đọc `ticket-system/.env` (không commit). Root key MinIO (`MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`)
+nằm riêng ở `ticket-system/.env.minio`, chỉ `minio/` đọc — xem [minio/README.md](minio/README.md). Tên biến (không giá trị):
 `.claude/references/backend/environment-variable-names.md`. Tạo file, `chmod 600`, khởi động service
 cần secret từ terminal riêng.

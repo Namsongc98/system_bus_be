@@ -9,16 +9,21 @@ import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import java.time.LocalDateTime;
@@ -100,6 +105,34 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler  {
             message = "Giá trị '" + echo(invalid.getValue()) + "' không hợp lệ cho '" + field + "'";
         }
         return new ResponseEntity<>(errorBody(HttpStatus.BAD_REQUEST, message, pathOf(request)), HttpStatus.BAD_REQUEST);
+    }
+
+    // Every other Spring MVC error (413 upload too large, 400 missing part, 415, 405, 406…) would
+    // otherwise go out as a ProblemDetail without `message`; give it the same body as the rest.
+    @Override
+    protected ResponseEntity<Object> handleExceptionInternal(
+            Exception ex, Object body, HttpHeaders headers, HttpStatusCode statusCode, WebRequest request) {
+        ResponseEntity<Object> standard = super.handleExceptionInternal(ex, body, headers, statusCode, request);
+        HttpStatus status = standard == null ? null : HttpStatus.resolve(standard.getStatusCode().value());
+        if (status == null) {
+            return standard;   // response already committed, or a non-standard status code
+        }
+        if (status.is5xxServerError()) {
+            // B18: same as internalError — the text goes to the log, never to the caller.
+            log.error("Unhandled error on {}", pathOf(request), ex);
+            return new ResponseEntity<>(errorBody(status, INTERNAL_ERROR_MESSAGE, pathOf(request)),
+                    standard.getHeaders(), status);
+        }
+        String message = switch (ex) {
+            case MaxUploadSizeExceededException e -> "Tệp vượt quá dung lượng cho phép";
+            case MissingServletRequestPartException e -> "Thiếu phần '" + e.getRequestPartName() + "' trong form";
+            case HttpMediaTypeNotSupportedException e -> "Định dạng nội dung không được hỗ trợ";
+            case HttpRequestMethodNotSupportedException e -> "Phương thức không được hỗ trợ";
+            default -> standard.getBody() instanceof ProblemDetail problem && problem.getDetail() != null
+                    ? problem.getDetail()
+                    : status.getReasonPhrase();
+        };
+        return new ResponseEntity<>(errorBody(status, message, pathOf(request)), standard.getHeaders(), status);
     }
 
     @ExceptionHandler(UnauthorizedRoleException.class)

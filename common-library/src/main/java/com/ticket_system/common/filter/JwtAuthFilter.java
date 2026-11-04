@@ -49,8 +49,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             }
             String path = request.getRequestURI();
 
-            // Ví dụ: bỏ qua auth cho ảnh avatar
-            if (path.startsWith("/avatars/") || path.startsWith("/api/auth/") || path.startsWith("/api/redis-test")) {
+            // Avatar is served by GET /api/profile/avatar with a token (4.1a), never as a public path.
+            if (path.startsWith("/api/auth/") || path.startsWith("/api/redis-test")) {
                 filterChain.doFilter(request, response);
                 return;
             }else {
